@@ -2,7 +2,7 @@
 
 A local, agentic AI assistant powered by **Qwen2.5-1.5B (Fine-Tuned)** with real-time PC control capabilities and a premium mobile remote dashboard. Optimized for consumer GPUs (RTX 3050 4GB).
 
-![Project Dashboard](mobile/bg.png)
+<!-- ![Project Dashboard](mobile/bg.png) -->
 
 ## 🚀 Features
 
@@ -45,7 +45,7 @@ graph LR
 
 1. **Clone the Repo**:
    ```powershell
-   git clone https://github.com/your-username/Spider-Arm-Assistant.git
+   git clone https://github.com/Mayan-kr/Spider-Arm-Assistant.git
    cd Spider-Arm-Assistant
    ```
 
