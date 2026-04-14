@@ -8,13 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #818cf8;
-            --accent: #c084fc;
-            --bg: #030712;
-            --glass: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f3f4f6;
-            --text-dim: #9ca3af;
+            --primary: #ef4444; /* Spider Red */
+            --accent: #991b1b;  /* Deep Blood Red */
+            --bg: #09090b;      /* Deep Black */
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(239, 68, 68, 0.2);
+            --text-main: #fafafa;
+            --text-dim: #a1a1aa;
         }
 
         * {
@@ -40,16 +40,17 @@
         .phone-container {
             width: 100%;
             max-width: 450px;
-            min-height: 100vh;
+            height: 100vh; /* Fixed height */
             background: rgba(3, 7, 18, 0.85);
             backdrop-filter: blur(20px);
-            padding: 2rem 1.5rem;
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 1rem;
             border-left: 1px solid var(--glass-border);
             border-right: 1px solid var(--glass-border);
             position: relative;
+            overflow: hidden; /* Prevent entire dashboard from scrolling */
         }
 
         header {
@@ -195,6 +196,8 @@
             font-size: 0.9rem;
             line-height: 1.4;
             animation: slide-up 0.4s ease-out;
+            word-break: break-word; /* Fix for long strings/JSON */
+            overflow-wrap: anywhere;
         }
 
         @keyframes slide-up {
@@ -264,14 +267,72 @@
         .btn-approve { background: #10b981; color: white; }
         .btn-reject { background: #ef4444; color: white; }
 
+        /* Login Screen */
+        .login-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #09090b;
+            background-image: radial-gradient(circle at center, #450a0a 0%, #09090b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            flex-direction: column;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 2rem;
+            padding: 3rem 2rem;
+            backdrop-filter: blur(20px);
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .google-btn {
+            background: white;
+            color: #1f2937;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 999px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            cursor: pointer;
+            width: 100%;
+            justify-content: center;
+            margin-top: 2rem;
+            transition: transform 0.2s;
+        }
+
+        .google-btn:hover { transform: scale(1.02); }
+        .google-btn img { width: 20px; }
+
     </style>
 </head>
 <body>
-    <div class="phone-container">
+    <!-- Login Screen -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-card">
+            <h1 style="color: white; margin-bottom: 0.5rem;">Spider-ARM</h1>
+            <p style="color: var(--text-dim); font-size: 0.9rem;">Authentication Required</p>
+            <button class="google-btn" onclick="loginWithGoogle()">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/01/2x/google_signin_buttons/google-icon.png" alt="Google">
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+
+    <div class="phone-container" style="display: none;" id="mainDashboard">
         <header>
-            <h1>Qwen AI</h1>
-            <div class="status-badge">
-                <div class="pulse"></div> Agent Online
+            <h1>Spider-ARM</h1>
+            <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.5rem; margin-bottom: 0.75rem; font-weight: 500; letter-spacing: 1px;">NEURAL CORE: QWEN-1.5B</div>
+            <div class="status-badge" id="statusBadge">
+                <div class="pulse" id="statusPulse"></div> <span id="statusLabel">Agent Offline</span>
             </div>
         </header>
 
@@ -287,7 +348,7 @@
                 <span class="icon">📸</span>
                 <span class="label">Screenshot</span>
             </div>
-            <div class="action-btn" onclick="quickCmd('What is the CPU usage?')">
+            <div class="action-btn" onclick="quickCmd('Give me a full system info report')">
                 <span class="icon">📊</span>
                 <span class="label">PC Stats</span>
             </div>
@@ -303,12 +364,20 @@
 
         <div class="command-card">
             <div class="input-group">
-                <input type="text" id="cmdInput" placeholder="Send a command...">
+                <input type="text" id="cmdInput" placeholder="Send a command..." onkeydown="if(event.key === 'Enter') sendCommand()">
                 <button class="send-btn" onclick="sendCommand()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </button>
             </div>
         </div>
+        
+        <footer style="text-align: center; padding-top: 1rem; opacity: 0.8;">
+            <a href="https://github.com/Mayan-kr" target="_blank" style="text-decoration: none; color: white; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; background: rgba(255,255,255,0.05); padding: 0.5rem 1rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s;">
+                <span style="opacity: 0.6;">Architect:</span> 
+                <span style="font-weight: 700; color: var(--primary);">Mayan-kr</span>
+                <span style="background: white; color: black; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px;">➔</span>
+            </a>
+        </footer>
     </div>
 
     <!-- Safety Confirmation Modal -->
@@ -326,6 +395,7 @@
     <!-- Firebase Logic (Ready to Plug) -->
     <script type="module">
         // Live Firebase configuration
+        // /* FIREBASE_CONFIG_START */
         const firebaseConfig = {
             apiKey: "AIzaSyDEt_cOoOqAYpDnYWMKjhgmDiEjWNIp0vQ",
             authDomain: "spider-arm.firebaseapp.com",
@@ -335,14 +405,62 @@
             appId: "1:11285399463:web:f59bb858d48ff45d869882",
             measurementId: "G-T9M5Q51575"
         };
+        // /* FIREBASE_CONFIG_END */
 
         // Initialize Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
         
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // Auth Logic
+        window.loginWithGoogle = function() {
+            signInWithPopup(auth, provider).catch(e => console.error("Login Error", e));
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('mainDashboard').style.display = 'flex';
+                console.log("Welcome,", user.displayName);
+            } else {
+                document.getElementById('loginOverlay').style.display = 'flex';
+                document.getElementById('mainDashboard').style.display = 'none';
+            }
+        });
         
+        // Status Heartbeat Listener
+        onSnapshot(doc(db, "system_status", "agent"), (doc) => {
+            const data = doc.data();
+            const badge = document.getElementById('statusBadge');
+            const pulse = document.getElementById('statusPulse');
+            const label = document.getElementById('statusLabel');
+            
+            if (data && data.status === 'online' && data.last_seen) {
+                const lastSeen = data.last_seen.toDate();
+                const now = new Date();
+                const diffSeconds = (now - lastSeen) / 1000;
+                
+                if (diffSeconds < 60) {
+                    badge.style.color = "#4ade80";
+                    pulse.style.display = "block";
+                    label.innerText = "Agent Online";
+                } else {
+                    badge.style.color = "#9ca3af";
+                    pulse.style.display = "none";
+                    label.innerText = "Agent Offline";
+                }
+            } else {
+                badge.style.color = "#9ca3af";
+                pulse.style.display = "none";
+                label.innerText = "Agent Offline";
+            }
+        });
+
         // Live Functionality
         window.sendCommand = async function() {
             const input = document.getElementById('cmdInput');
@@ -377,7 +495,11 @@
                 if (change.type === "added" || change.type === "modified") {
                     const data = change.doc.data();
                     if (data.status === "completed" && data.result) {
-                        addMessage(`[Result] ${JSON.stringify(data.result.message || data.result.data || data.result)}`, 'bot');
+                        const resultData = data.result.data || data.result.message || data.result;
+                        const formattedResult = typeof resultData === 'object' 
+                            ? `<pre style="font-size:0.75rem; margin-top:0.5rem; background:rgba(0,0,0,0.2); padding:0.5rem; border-radius:0.5rem;">${JSON.stringify(resultData, null, 2)}</pre>`
+                            : resultData;
+                        addMessage(`<b>Result:</b> ${formattedResult}`, 'bot');
                     } else if (data.status === "request_confirmation") {
                         showSafety(data.message, change.doc.id);
                     }

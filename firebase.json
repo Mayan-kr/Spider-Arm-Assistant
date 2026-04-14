@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": "mobile",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "venv_312/**",
+      "qwen_assistant_lora/**",
+      "data/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

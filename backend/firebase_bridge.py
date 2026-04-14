@@ -2,15 +2,39 @@ import firebase_admin
 from firebase_admin import credentials, firestore, db
 import os
 import json
+import threading
+import time
 from controller.tools import (
     screenshot, launch_app, get_system_info, 
-    type_text, terminate_process, delete_file, confirm_action
+    type_text, terminate_process, delete_file, 
+    confirm_action, control_media
 )
 
 # NOTE: The user will need to provide their own serviceAccountKey.json
 # For now, we'll implement the logic to handle incoming requests.
 
+def start_heartbeat(db_client):
+    """Updates the 'system_status' document every 30 seconds."""
+    def heartbeat_loop():
+        print("[SPIDER-ARM] Heartbeat pulse started.")
+        while True:
+            try:
+                db_client.collection('system_status').document('agent').set({
+                    'status': 'online',
+                    'last_seen': firestore.SERVER_TIMESTAMP
+                })
+            except Exception as e:
+                print(f"[DEBUG] Heartbeat error: {e}")
+            time.sleep(30)
+            
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    thread.start()
+
 def initialize_firebase():
+    """
+    Initializes the Firebase Admin SDK using a service account key.
+    Returns a Firestore client instance if successful, else None.
+    """
     try:
         cred_path = os.getenv("FIREBASE_CRED_PATH", "serviceAccountKey.json")
         if not os.path.exists(cred_path):
@@ -42,7 +66,8 @@ def process_command(command_data):
         "type_text": lambda p: type_text(p.get("text")),
         "terminate_process": lambda p: terminate_process(p.get("name")),
         "delete_file": lambda p: delete_file(p.get("path")),
-        "confirm_action": lambda p: confirm_action(p.get("action_id"))
+        "confirm_action": lambda p: confirm_action(p.get("action_id")),
+        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint"))
     }
     
     if tool_name in tools_map:
@@ -58,7 +83,7 @@ def listen_for_remote_commands(db_client, model, tokenizer):
     
     from inference import get_agent_response
     
-    print("[FIREBASE] Listening for commands in 'commands' collection...")
+    print("[SPIDER-ARM] Listening for commands in 'commands' collection...")
     
     def on_snapshot(col_snapshot, changes, read_time):
         print(f"[DEBUG] Received snapshot with {len(changes)} changes.")
@@ -95,9 +120,9 @@ def listen_for_remote_commands(db_client, model, tokenizer):
                                 "result": result,
                                 "executed_action": action
                             })
-                            print(f"[REMOTE] √ Successfully completed: {instruction}")
+                            print(f"[SPIDER-ARM] √ Successfully completed: {instruction}")
                         else:
-                            print(f"[REMOTE] ! Model failed to determine action for: {instruction}")
+                            print(f"[SPIDER-ARM] ! Model failed to determine action for: {instruction}")
                             doc.reference.update({
                                 "status": "error",
                                 "message": "Model could not determine an action"
@@ -126,6 +151,7 @@ if __name__ == "__main__":
     
     db_client = initialize_firebase()
     if db_client:
+        start_heartbeat(db_client)
         listen_for_remote_commands(db_client, model, tokenizer)
     else:
         print("[ERROR] Could not start bridge without Firebase credentials.")

@@ -3,8 +3,11 @@ import torch
 import json
 from controller.tools import (
     screenshot, launch_app, get_system_info, 
-    type_text, terminate_process, delete_file, confirm_action
+    type_text, terminate_process, delete_file, 
+    confirm_action, control_media
 )
+
+import re
 
 # NOTE: TurboQuant is a training-free KV cache compression technique.
 # In a real-world integration, you'd wrap the model's attention layers.
@@ -19,12 +22,28 @@ def load_agent_model(model_path="qwen_assistant_lora"):
     FastLanguageModel.for_inference(model)
     return model, tokenizer
 
-def get_agent_response(model, tokenizer, instruction, history=""):
-    prompt = f"### Instruction:\n{instruction}\n\n### Thought:\n"
-    inputs = tokenizer([prompt], return_tensors = "pt").to("cuda")
+def repair_json_string(s):
+    """Common fixes for small model JSON hallucinations"""
+    # Fix missing "parameters" key: {"tool": "name", {}} -> {"tool": "name", "parameters": {}}
+    s = re.sub(r'\",\s*{', '", "parameters": {', s)
+    s = re.sub(r'\',\s*{', '", "parameters": {', s)
     
-    # Simulate TurboQuant by setting specific inference params if available
-    # Actually, TurboQuant would be applied via a model wrapper during load.
+    # Ensure balanced braces
+    if s.count('{') > s.count('}'):
+        s += '}' * (s.count('{') - s.count('}'))
+    
+    # Clean up any trailing text after the last brace
+    last_brace = s.rfind('}')
+    if last_brace != -1:
+        s = s[:last_brace+1]
+        
+    return s
+
+def get_agent_response(model, tokenizer, instruction, history=""):
+    # Clearer formatting hint for the model
+    format_hint = ' (Format: {"tool": "name", "parameters": {}})'
+    prompt = f"### Instruction:\n{instruction}{format_hint}\n\n### Thought:\n"
+    inputs = tokenizer([prompt], return_tensors = "pt").to("cuda")
     
     outputs = model.generate(**inputs, max_new_tokens = 256, use_cache = True)
     response = tokenizer.batch_decode(outputs)[0]
@@ -49,7 +68,13 @@ def get_agent_response(model, tokenizer, instruction, history=""):
             if start != -1 and end != -1:
                 action_str = action_section[start:end]
                 print(f"[DEBUG] Raw JSON extracted: {action_str}")
-                action_data = json.loads(action_str)
+                
+                # Apply SMART REPAIR
+                repaired_str = repair_json_string(action_str)
+                if repaired_str != action_str:
+                    print(f"[DEBUG] Smart Repaired JSON: {repaired_str}")
+                
+                action_data = json.loads(repaired_str)
                 
                 # Normalize keys: accept 'args', 'params', or 'parameters'
                 params = action_data.get("parameters") or action_data.get("args") or action_data.get("params") or {}
@@ -85,10 +110,11 @@ def agent_loop():
         "type_text": lambda p: type_text(p.get("text")),
         "terminate_process": lambda p: terminate_process(p.get("name")),
         "delete_file": lambda p: delete_file(p.get("path")),
-        "confirm_action": lambda p: confirm_action(p.get("action_id"))
+        "confirm_action": lambda p: confirm_action(p.get("action_id")),
+        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint"))
     }
 
-    print("[AGENT] Ready! Waiting for input...")
+    print("[SPIDER-ARM] Ready! Waiting for input...")
     while True:
         user_input = input("You: ")
         if user_input.lower() in ["exit", "quit"]:
@@ -99,7 +125,7 @@ def agent_loop():
         if action and action.get("tool") in tools_map:
             tool_name = action["tool"]
             params = action.get("parameters", {})
-            print(f"[AGENT] Action: {tool_name}({params})")
+            print(f"[SPIDER-ARM] Action: {tool_name}({params})")
             
             # Execute tool
             if tool_name == "screenshot":
@@ -109,7 +135,7 @@ def agent_loop():
             
             print(f"[SYSTEM] Result: {result}")
         else:
-            print("[AGENT] I'm not sure how to help with that or no tool was called.")
+            print("[SPIDER-ARM] I'm not sure how to help with that or no tool was called.")
 
 if __name__ == "__main__":
     agent_loop()

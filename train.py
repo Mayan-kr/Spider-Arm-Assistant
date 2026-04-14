@@ -54,6 +54,7 @@ def run_training():
             lr_scheduler_type = "linear",
             seed = 3407,
             output_dir = "outputs",
+            save_strategy = "no", # Prevent mid-training lock issues
         ),
     )
 

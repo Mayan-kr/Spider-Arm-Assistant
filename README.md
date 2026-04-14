@@ -1,16 +1,30 @@
-# 🕷️ Spider-Arm Assistant
+# 🕷️ Spider-Arm Assistant v2.0
 
-A local, agentic AI assistant powered by **Qwen2.5-1.5B (Fine-Tuned)** with real-time PC control capabilities and a premium mobile remote dashboard. Optimized for consumer GPUs (RTX 3050 4GB).
+A professional, local agentic AI assistant powered by **Qwen2.5-1.5B (Fine-Tuned LoRA)**. Spider-Arm provides real-time PC control, hardware monitoring, and high-precision app launching through a premium, "Spider-Themed" mobile remote dashboard. 
 
 <!-- ![Project Dashboard](mobile/bg.png) -->
 
-## 🚀 Features
+## 🌟 What's New in v2.0
+-   **Spider Theme**: A complete UI overhaul with a high-contrast Red & Black "Spider" aesthetic.
+-   **Smart App Launcher**: Prioritizes Brave/Chrome shortcuts and handles Windows aliases (like Calculator) without error popups.
+-   **Hardware Heat Monitor**: Real-time GPU (RTX 3050) and CPU temperature telemetry.
+-   **Universal Media Controls**: Remote Play/Pause, Skip, and Volume control for Spotify, YouTube, and more.
+-   **JSON Repair Layer**: Enhanced model reliability for small 1.5B parameters.
 
--   **PC Control**: Launch apps, type text, take screenshots, and manage processes via natural language.
--   **Agentic Reasoning**: Uses a fine-tuned Qwen model to "think" before acting.
--   **Remote Dashboard**: A glassmorphism mobile UI to control your PC from anywhere in the world.
--   **Cloud Messaging**: Synchronized via Firebase Firestore for low-latency command execution.
+## 🚀 Core Features
 -   **Safety First**: Built-in approval loop for sensitive actions like file deletion.
+
+## 🛡️ Security & Privacy
+Spider-Arm v2.0 is designed for personal privacy:
+-   **Google Authentication**: The mobile dashboard is locked. Only the owner can send commands.
+-   **Firestore Lockdown**: Security Rules ensure that only your verified email can write to the database.
+-   **Local Inference**: Your AI brain runs 100% locally on your GPU. No private screen captures are sent to external APIs.
+
+## 🌟 Detailed Features
+-   **🕷️ Hardware Pulse**: Real-time telemetry for **NVIDIA GPU** & **CPU** temperatures.
+-   **🎯 Smart App Launcher**: Prioritizes Brave shortcuts and handles Windows command aliases.
+-   **🎵 Universal Media Control**: Remote Play/Pause, Skip, and Volume for Spotify/YouTube.
+-   **🤖 JSON Repair Layer**: Auto-corrects minor model formatting errors for 100% reliability.
 
 ## 🏗️ Architecture
 
@@ -41,30 +55,40 @@ graph LR
 -   Python 3.12
 -   Firebase Account & Project
 
-## 🔧 Installation
+## 🔧 Quick Start (The Easy Way)
 
-1. **Clone the Repo**:
-   ```powershell
-   git clone https://github.com/Mayan-kr/Spider-Arm-Assistant.git
-   cd Spider-Arm-Assistant
-   ```
+If you are cloning this repository, you don't need to manually edit files. We've built an **Automated Setup Wizard** to do the heavy lifting for you.
 
-2. **Setup Virtual Environment**:
-   ```powershell
-   python -m venv venv_312
-   .\venv_312\Scripts\activate
-   pip install torch unsloth psutil pyautogui firebase-admin
-   ```
+### 1. Ready the Environment
+```powershell
+python -m venv venv_312
+.\venv_312\Scripts\activate
+```
 
-3. **Configure Firebase**:
-   - Place your `serviceAccountKey.json` in the project root.
-   - Update `mobile/index.html` with your Firebase Web Config.
+### 2. Run the Wizard
+```powershell
+python setup_wizard.py
+```
+**What the wizard does for you:**
+-   ✅ Installs all dependencies (`torch`, `unsloth`, `pyautogui`, etc.)
+-   ✅ Asks for your Firebase keys and injects them into the Dashboard.
+-   ✅ Sets your authorized email for the Security Lockdown.
+-   ✅ **Awakens the Brain**: Automatically runs the training process to create your local AI model.
 
-4. **Prepare Data (Optional)**:
-   ```powershell
-   python scripts/generate_synthetic_data.py
-   python train.py
-   ```
+---
+
+## 🎮 Post-Setup Usage
+Once the wizard finishes, your Spider-Arm is ready to go:
+
+### 🏠 Local Control
+```powershell
+python inference.py
+```
+
+### 📱 Remote Control (Android)
+1.  **Deploy**: `firebase deploy`
+2.  **Start Bridge**: `python -m backend.firebase_bridge`
+3.  **Open URL**: Go to your hosted Firebase URL on your phone and Sign In!
 
 ## 🎮 Usage
 
