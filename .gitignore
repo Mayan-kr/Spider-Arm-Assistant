@@ -1,0 +1,41 @@
+# --- Qwen Assistant Git Ignore ---
+
+# Security - CRITICAL (Never push these to public repo)
+serviceAccountKey.json
+.env
+*.pem
+*.key
+
+# Virtual Environments
+venv/
+venv_312/
+venv_gpu/
+env/
+ENV/
+bin/
+lib/
+share/
+Include/
+
+# Model & Large Files
+qwen_assistant_lora/
+unsloth_compiled_cache/
+*.pt
+*.bin
+*.pth
+outputs/*.png
+
+# Python logs/cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Workspace / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
