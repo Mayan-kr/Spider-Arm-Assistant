@@ -9,9 +9,7 @@ from controller.tools import (
 
 import re
 
-# NOTE: TurboQuant is a training-free KV cache compression technique.
-# In a real-world integration, you'd wrap the model's attention layers.
-# Here we simulate the inference optimized for context.
+# This script handles the local AI inference using Unsloth 4-bit quantization.
 
 def load_agent_model(model_path="qwen_assistant_lora"):
     model, tokenizer = FastLanguageModel.from_pretrained(
@@ -25,9 +23,8 @@ def load_agent_model(model_path="qwen_assistant_lora"):
 def repair_json_string(s):
     """Common fixes for small model JSON hallucinations"""
     # Fix missing "parameters" key: {"tool": "name", {}} -> {"tool": "name", "parameters": {}}
-    s = re.sub(r'\",\s*{', '", "parameters": {', s)
-    s = re.sub(r'\',\s*{', '", "parameters": {', s)
-    
+    # This regex handles both single (') and double (") quotes efficiently
+    s = re.sub(r'["\'],?\s*{', '", "parameters": {', s)
     # Ensure balanced braces
     if s.count('{') > s.count('}'):
         s += '}' * (s.count('{') - s.count('}'))
@@ -48,9 +45,6 @@ def get_agent_response(model, tokenizer, instruction, history=""):
     outputs = model.generate(**inputs, max_new_tokens = 256, use_cache = True)
     response = tokenizer.batch_decode(outputs)[0]
     
-    # DEBUG: Print raw response to see what's happening
-    print(f"--- DEBUG RAW RESPONSE ---\n{response}\n--------------------------")
-
     # Clean special tokens and whitespace
     clean_response = response.replace("<|endoftext|>", "").strip()
     
@@ -67,12 +61,11 @@ def get_agent_response(model, tokenizer, instruction, history=""):
             
             if start != -1 and end != -1:
                 action_str = action_section[start:end]
-                print(f"[DEBUG] Raw JSON extracted: {action_str}")
                 
                 # Apply SMART REPAIR
                 repaired_str = repair_json_string(action_str)
                 if repaired_str != action_str:
-                    print(f"[DEBUG] Smart Repaired JSON: {repaired_str}")
+                    print(f"[SPIDER-ARM] Handled model syntax error via Smart-Repair.")
                 
                 action_data = json.loads(repaired_str)
                 

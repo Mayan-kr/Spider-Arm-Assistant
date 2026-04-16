@@ -2,6 +2,8 @@
 
 # Security - CRITICAL (Never push these to public repo)
 serviceAccountKey.json
+credentials.json
+mobile/firebase-config.js
 .env
 *.pem
 *.key

@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials, firestore, db
+from firebase_admin import credentials, firestore
 import os
 import json
 import threading
@@ -32,16 +32,24 @@ def start_heartbeat(db_client):
 
 def initialize_firebase():
     """
-    Initializes the Firebase Admin SDK using a service account key.
+    Initializes the Firebase Admin SDK using the Unified Vault.
     Returns a Firestore client instance if successful, else None.
     """
     try:
-        cred_path = os.getenv("FIREBASE_CRED_PATH", "serviceAccountKey.json")
+        cred_path = "credentials.json"
         if not os.path.exists(cred_path):
-            print(f"[ERROR] Firebase credentials not found at {cred_path}. Skipping real-time features.")
+            print(f"[ERROR] Unified Vault (credentials.json) not found. Run setup_wizard.py first.")
             return None
         
-        cred = credentials.Certificate(cred_path)
+        with open(cred_path, "r") as f:
+            vault = json.load(f)
+            sa_data = vault.get("service_account")
+        
+        if not sa_data:
+            print("[ERROR] Service Account data missing from vault.")
+            return None
+
+        cred = credentials.Certificate(sa_data)
         firebase_admin.initialize_app(cred)
         return firestore.client()
     except Exception as e:

@@ -394,18 +394,8 @@
 
     <!-- Firebase Logic (Ready to Plug) -->
     <script type="module">
-        // Live Firebase configuration
-        // /* FIREBASE_CONFIG_START */
-        const firebaseConfig = {
-            apiKey: "AIzaSyDEt_cOoOqAYpDnYWMKjhgmDiEjWNIp0vQ",
-            authDomain: "spider-arm.firebaseapp.com",
-            projectId: "spider-arm",
-            storageBucket: "spider-arm.firebasestorage.app",
-            messagingSenderId: "11285399463",
-            appId: "1:11285399463:web:f59bb858d48ff45d869882",
-            measurementId: "G-T9M5Q51575"
-        };
-        // /* FIREBASE_CONFIG_END */
+        // Import configuration from separate file
+        import { firebaseConfig } from './firebase-config.js';
 
         // Initialize Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";

@@ -3,16 +3,20 @@ import re
 import subprocess
 import sys
 import json
+import random
+import string
+import webbrowser
+import time
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_banner():
-    print("="*60)
-    print("      🕷️ Spider-Arm: Automated Setup Wizard v2.0 🕷️")
-    print("="*60)
-    print("This wizard will link your PC to your private dashboard.")
-    print("Please have your Firebase Console ready.\n")
+    print("="*70)
+    print("      🕷️  Spider-ARM: Zero-Touch 'Cloud Architect' Wizard v3.0 🕷️")
+    print("="*70)
+    print("This wizard will automatically build your Firebase Infrastructure.")
+    print("Requirement: You must have the Firebase CLI installed.\n")
 
 def get_input(prompt, default=None):
     if default:
@@ -20,109 +24,170 @@ def get_input(prompt, default=None):
         return val if val else default
     return input(f"{prompt}: ").strip()
 
+def run_cmd(cmd, capture_output=True):
+    """Runs a shell command and returns the output."""
+    try:
+        result = subprocess.run(cmd, capture_output=capture_output, text=True, shell=True, check=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"\n[ERROR] Command failed: {cmd}")
+        print(f"Details: {e.stderr}")
+        return None
+
 def run_step(name, func):
     print(f"\n[STEP] {name}...")
     try:
-        func()
-        print(f"[SUCCESS] {name} complete.")
-        return True
+        res = func()
+        if res is not False:
+            print(f"[SUCCESS] {name} complete.")
+            return res
+        return False
     except Exception as e:
         print(f"[ERROR] {name} failed: {e}")
         return False
+
+def generate_id(prefix="spider-arm"):
+    suffix = ''.join(random.choices(string.digits, k=4))
+    return f"{prefix}-{suffix}"
 
 def setup():
     clear()
     print_banner()
 
-    # --- 1. COLLECT INFORMATION ---
-    print("--- 1. Firebase Information ---")
-    print("Find these under Project Settings -> Web App (Firebase SDK snippet)\n")
-    
-    config = {
-        "apiKey": get_input("API Key"),
-        "authDomain": get_input("Auth Domain"),
-        "projectId": get_input("Project ID"),
-        "storageBucket": get_input("Storage Bucket"),
-        "messagingSenderId": get_input("Messaging Sender ID"),
-        "appId": get_input("App ID"),
-        "measurementId": get_input("Measurement ID")
-    }
-    
-    email = get_input("Your Gmail (for security rules lockdown)")
+    # --- 1. AUTH CHECK ---
+    def check_auth():
+        print("Checking Firebase login status...")
+        # Try to get projects to see if logged in
+        out = run_cmd("firebase projects:list")
+        if not out or "Error" in out:
+            print("Action Required: Please log in to Firebase in your browser.")
+            run_cmd("firebase login", capture_output=False)
+        return True
 
-    # --- 2. CONFIG INJECTION ---
-    def inject_config():
-        path = "mobile/index.html"
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Could not find {path}")
+    if not run_step("Firebase Authentication", check_auth): return
 
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Build JS config string
-        js_config = "const firebaseConfig = {\n"
-        for k, v in config.items():
-            js_config += f'            {k}: "{v}",\n'
-        js_config = js_config.rstrip(",\n") + "\n        };"
-
-        # Regex replace
-        pattern = r"// /\* FIREBASE_CONFIG_START \*/(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n(.*?)\r?\n\s+// /\* FIREBASE_CONFIG_END \*/"
+    # --- 2. PROJECT PROVISIONING ---
+    project_id = generate_id()
+    def create_project():
+        print(f"Creating project '{project_id}'... this takes ~30 seconds.")
+        run_cmd(f"firebase projects:create {project_id} --display-name 'Spider Arm Assistant'", capture_output=False)
         
-        # Simpler robust marker replace
-        start_marker = "// /* FIREBASE_CONFIG_START */"
-        end_marker = "// /* FIREBASE_CONFIG_END */"
+        # Enable it in the current dir
+        run_cmd(f"firebase use {project_id}", capture_output=False)
+        return project_id
+
+    if not run_step(f"Provisioning Cloud Project ({project_id})", create_project): return
+
+    # --- 3. FIRESTORE ACTIVATION ---
+    def enable_firestore():
+        print("Initializing Firestore Database (Region: us-central)...")
+        # Note: This might fail if the user already has too many databases, but for a new project it works.
+        run_cmd(f"firebase firestore:databases:create (default) --location us-central", capture_output=False)
+        return True
+
+    run_step("Activating Firestore Database", enable_firestore)
+
+    # --- 4. APP REGISTRATION ---
+    def register_app():
+        print("Registering the 'Spider Dashboard' Web App...")
+        run_cmd(f"firebase apps:create WEB 'Spider Dashboard'", capture_output=False)
         
-        start_idx = content.find(start_marker) + len(start_marker)
-        end_idx = content.find(end_marker)
+        # Fetch the config
+        print("Harvesting SDK credentials...")
+        config_out = run_cmd("firebase apps:sdkconfig WEB --json")
+        if config_out:
+            data = json.loads(config_out)
+            return data.get("result", {}).get("sdkConfig")
+        return None
+
+    web_config = run_step("Registering Web Dashboard", register_app)
+    if not web_config: 
+        print("[CRITICAL] Could not harvest Web SDK Keys.")
+        return
+
+    # --- 5. UNIFIED VAULT INJECTION ---
+    def save_vault():
+        # First, ensure we have the Dashboard Email for rules
+        email = get_input("Your Gmail (for Security Lockdown rules)")
         
-        if start_idx == -1 or end_idx == -1:
-            raise ValueError("Markers not found in index.html")
-
-        new_content = content[:start_idx] + "\n        " + js_config + "\n        " + content[end_idx:]
+        # Save to credentials.json (Root)
+        vault = {
+            "web_dashboard": web_config,
+            "authorized_email": email,
+            "service_account": None # Will fill in next step
+        }
         
-        # Also replace the placeholder email in the bot greeting (line 341 approx)
-        new_content = re.sub(r"Hey Kumar!", f"Hey {email.split('@')[0].capitalize()}!", new_content)
+        # Mirror to mobile/firebase-config.js (Safe keys only)
+        js_content = "export const firebaseConfig = " + json.dumps(web_config, indent=4) + ";"
+        with open("mobile/firebase-config.js", "w") as f:
+            f.write(js_content)
+        
+        return vault
 
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+    vault = run_step("Generating Unified Vault & Dashboard Config", save_vault)
 
-    run_step("Injecting Configuration into Dashboard", inject_config)
+    # --- 6. SERVICE ACCOUNT (THE LAST MANUAL BIT) ---
+    def fetch_service_account():
+        print("\n[ACTION REQUIRED]")
+        print("1. Your browser will now open to the Firebase Console.")
+        print("2. Click 'Generate New Private Key'.")
+        print("3. Copy the ENTIRE content of that JSON file.")
+        
+        url = f"https://console.firebase.google.com/project/{project_id}/settings/serviceaccounts/adminsdk"
+        webbrowser.open(url)
+        
+        print("\nPaste the JSON content from the downloaded file here:")
+        print("(Press Enter on an empty line when finished, or paste it as one line)")
+        
+        lines = []
+        while True:
+            line = input()
+            if line == "": break
+            lines.append(line)
+        
+        json_str = "".join(lines)
+        try:
+            sa_data = json.loads(json_str)
+            vault["service_account"] = sa_data
+            
+            # Save the final consolidated vault
+            with open("credentials.json", "w") as f:
+                json.dump(vault, f, indent=4)
+            return True
+        except:
+            print("[ERROR] Invalid JSON pasted.")
+            return False
 
-    # --- 3. DEPENDENCIES ---
-    def install_deps():
-        deps = ["psutil", "pyautogui", "firebase-admin", "GPUtil", "wmi", "pygetwindow"]
-        print(f"Installing system dependencies: {', '.join(deps)}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install"] + deps)
+    if not run_step("Linking Security Systems (Service Account)", fetch_service_account): return
 
-    run_step("Installing Python Dependencies", install_deps)
+    # --- 7. AUTO-DEPLOY RULES ---
+    def deploy_systems():
+        print("Deploying Security Rules and Hosting to the Cloud...")
+        run_cmd("firebase deploy", capture_output=False)
+        return True
 
-    # --- 4. BRAIN ACTIVATION (TRAINING) ---
+    run_step("Deploying to Web", deploy_systems)
+
+    # --- 8. BRAIN ACTIVATION ---
     def train_brain():
-        print("Activating AI Brain (this will take 3-5 minutes on an RTX GPU)...")
-        # Run train.py and pipe output so user can see progress
-        process = subprocess.Popen([sys.executable, "train.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        for line in process.stdout:
-            print(f"  [TRAINING] {line.strip()}")
-        process.wait()
-        if process.returncode != 0:
-            raise Exception("Training process crashed.")
+        print("Activating AI Brain (Fine-Tuning LoRA)...")
+        subprocess.check_call([sys.executable, "train.py"])
 
-    run_step("Awakening the AI Brain (Fine-Tuning)", train_brain)
+    run_step("Awakening the AI Brain", train_brain)
 
-    # --- 5. FINISH ---
-    print("\n" + "="*60)
-    print("      🎉 SETUP COMPLETE! SPIDER-ARM IS READY 🎉")
-    print("="*60)
-    print(f"\nYour dashboard is now linked to: {config['projectId']}")
-    print(f"Authorized Email: {email}")
-    print("\nFINAL STEPS:")
-    print("1. Run 'firebase login' to authenticate.")
-    print("2. Run 'firebase deploy' to put your dashboard on the web.")
-    print("3. Start your PC agent: 'python -m backend.firebase_bridge'")
-    print("\nEnjoy your private agentic PC assistant! 🕸️🤖")
+    print("\n" + "="*70)
+    print("      🎊  ZERO-TOUCH SETUP COMPLETE! SPIDER-ARM IS LIVE 🎊")
+    print("="*70)
+    print(f"URL: https://{project_id}.web.app")
+    print("\nNext steps:")
+    print("1. Open the URL on your phone.")
+    print("2. Run 'python -m backend.firebase_bridge' to start the heartbeat.")
+    print("\nWelcome to the future of PC Assistant control! 🕸️🤖")
 
 if __name__ == "__main__":
     try:
         setup()
     except KeyboardInterrupt:
-        print("\n[WIZARD] Setup cancelled by user.")
+        print("\n[WIZARD] Setup cancelled.")
+    except Exception as e:
+        print(f"\n[FATAL] Wizard crashed: {e}")
