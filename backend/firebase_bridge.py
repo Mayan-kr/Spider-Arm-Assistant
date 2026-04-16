@@ -7,7 +7,8 @@ import time
 from controller.tools import (
     screenshot, launch_app, get_system_info, 
     type_text, terminate_process, delete_file, 
-    confirm_action, control_media
+    confirm_action, control_media, create_file, create_folder,
+    press_key
 )
 
 # NOTE: The user will need to provide their own serviceAccountKey.json
@@ -67,6 +68,18 @@ def process_command(command_data):
     tool_name = command_data.get("tool")
     params = command_data.get("parameters", {})
     
+    # 1. Aliasing (Normalize tool names)
+    tool_aliases = {
+        "get_system_telemetry": "get_system_info",
+        "get_telemetry": "get_system_info",
+        "capture_screenshot": "screenshot",
+        "take_screenshot": "screenshot",
+        "close_app": "terminate_process",
+        "open_app": "launch_app"
+    }
+    if tool_name in tool_aliases:
+        tool_name = tool_aliases[tool_name]
+
     tools_map = {
         "screenshot": screenshot,
         "launch_app": lambda p: launch_app(p.get("name")),
@@ -75,7 +88,10 @@ def process_command(command_data):
         "terminate_process": lambda p: terminate_process(p.get("name")),
         "delete_file": lambda p: delete_file(p.get("path")),
         "confirm_action": lambda p: confirm_action(p.get("action_id")),
-        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint"))
+        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint")),
+        "create_file": lambda p: create_file(p.get("name"), p.get("content", ""), p.get("append", False)),
+        "create_folder": lambda p: create_folder(p.get("name")),
+        "press_key": lambda p: press_key(p.get("key"))
     }
     
     if tool_name in tools_map:
@@ -122,13 +138,21 @@ def listen_for_remote_commands(db_client, model, tokenizer):
                             # 3. Execute Tool
                             result = process_command(action)
                             
-                            # 4. Update with result
-                            doc.reference.update({
-                                "status": "completed",
-                                "result": result,
-                                "executed_action": action
-                            })
-                            print(f"[SPIDER-ARM] √ Successfully completed: {instruction}")
+                            # 4. Handle Security Approvals vs Completion
+                            if isinstance(result, dict) and result.get("status") == "request_confirmation":
+                                doc.reference.update({
+                                    "status": "request_confirmation",
+                                    "action_id": result.get("action_id"), # Critical for confirmation
+                                    "message": result.get("message", f"Spider-ARM wants to execute {action.get('tool')}. Do you approve?")
+                                })
+                                print(f"[SECURITY] Approval required for: {instruction}")
+                            else:
+                                doc.reference.update({
+                                    "status": "completed",
+                                    "result": result,
+                                    "executed_action": action
+                                })
+                                print(f"[SPIDER-ARM] √ Successfully completed: {instruction}")
                         else:
                             print(f"[SPIDER-ARM] ! Model failed to determine action for: {instruction}")
                             doc.reference.update({
@@ -138,6 +162,27 @@ def listen_for_remote_commands(db_client, model, tokenizer):
                     except Exception as e:
                         print(f"[ERROR] Logic error during execution: {e}")
                         doc.reference.update({"status": "error", "message": str(e)})
+
+                elif current_status == "approved":
+                    action_id = data.get("action_id")
+                    print(f"[SECURITY] >>> User APPROVED action: {action_id}")
+                    doc.reference.update({"status": "processing"})
+                    
+                    # Execute the confirmed action
+                    result = process_command({"tool": "confirm_action", "parameters": {"action_id": action_id}})
+                    
+                    doc.reference.update({
+                        "status": "completed",
+                        "result": result
+                    })
+                    print(f"[SPIDER-ARM] √ Confirmed action executed: {action_id}")
+
+                elif current_status == "denied":
+                    print(f"[SECURITY] >>> User DENIED action.")
+                    doc.reference.update({
+                        "status": "completed",
+                        "result": {"status": "error", "message": "User denied the security request."}
+                    })
     
     # Watch the 'commands' collection
     commands_ref = db_client.collection('commands')

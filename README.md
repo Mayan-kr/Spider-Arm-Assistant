@@ -9,10 +9,14 @@ A professional, local agentic AI assistant powered by **Qwen2.5-1.5B (Fine-Tuned
 - **Smart App Launcher**: Prioritizes Brave/Chrome shortcuts and handles Windows aliases (like Calculator) without error popups.
 - **Hardware Heat Monitor**: Real-time GPU (RTX 3050) and CPU temperature telemetry.
 - **Universal Media Controls**: Remote Play/Pause, Skip, and Volume control for Spotify, YouTube, and more.
+- **Safety Handshake (v2.5.1)**: Inline chat approval cards for sensitive file operations (Delete/Create).
+- **Smart Navigator**: Virtual key-press support (`press_key`) and auto-submitting `type_text`.
 - **JSON Repair Layer**: Enhanced model reliability for small 1.5B parameters.
 
 ## 🚀 Core Features
-- **Safety First**: Built-in approval loop for sensitive actions like file deletion.
+- **Zero-Touch Execution**: Deterministic tool-calling with 1.5B parameters.
+- **Safety Handshake**: Built-in approval loop with "Inline Cards" for sensitive actions.
+- **Cloud Persistence**: Mobile-triggered file creation and "Smart Append" notes.
 
 ## 🛡️ Security & Privacy
 Spider-Arm v2.5 is designed for personal privacy:
@@ -117,13 +121,18 @@ python -m backend.firebase_bridge
 ```
 
 ## 🛡️ Tools & Safety
-The agent has access to the following tools:
+The agent has 11 specialized tools at its disposal:
 - `screenshot()`: Captures the primary display.
 - `launch_app(name)`: Opens any installed application.
 - `get_system_info(metric)`: Fetches CPU, RAM, or Disk stats.
-- `type_text(text)`: Simulates keyboard input.
+- `control_media(action)`: Remote music and volume control.
+- `type_text(text)`: Simulates keyboard input (now with auto-Enter).
+- `press_key(key)`: Single key-presses (Enter, Tab, Esc).
+- `create_file(name, content, append)`: Creates/Appends files on Desktop **[REQUIRES APPROVAL]**.
+- `create_folder(name)`: Creates Windows folders **[REQUIRES APPROVAL]**.
+- `delete_file(path)`: Secure file removal **[REQUIRES APPROVAL]**.
 - `terminate_process(name)`: Force closes applications.
-- `delete_file(path)`: **[REQUIRES REMOTE APPROVAL]**
+- `confirm_action(id)`: Validates a pending safety request.
 
 ## 📜 License
 MIT License. Explore and build!

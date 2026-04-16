@@ -423,24 +423,37 @@
             }
         });
         
-        // Status Heartbeat Listener
+        // Status Heartbeat & Monitoring
+        let lastSeenTime = null;
+        
         onSnapshot(doc(db, "system_status", "agent"), (doc) => {
             const data = doc.data();
+            if (data && data.last_seen) {
+                lastSeenTime = data.last_seen.toDate();
+                updateStatusUI();
+            }
+        });
+
+        // Periodic check to catch bridge shutdowns (40s timeout)
+        setInterval(() => {
+            updateStatusUI();
+        }, 10000); // Check every 10 seconds
+
+        function updateStatusUI() {
             const badge = document.getElementById('statusBadge');
             const pulse = document.getElementById('statusPulse');
             const label = document.getElementById('statusLabel');
             
-            if (data && data.status === 'online' && data.last_seen) {
-                const lastSeen = data.last_seen.toDate();
+            if (lastSeenTime) {
                 const now = new Date();
-                const diffSeconds = (now - lastSeen) / 1000;
+                const diffSeconds = (now - lastSeenTime) / 1000;
                 
-                if (diffSeconds < 60) {
-                    badge.style.color = "#4ade80";
+                if (diffSeconds < 40) {
+                    badge.style.color = "#4ade80"; // Bright Green
                     pulse.style.display = "block";
                     label.innerText = "Agent Online";
                 } else {
-                    badge.style.color = "#9ca3af";
+                    badge.style.color = "#9ca3af"; // Muted Gray
                     pulse.style.display = "none";
                     label.innerText = "Agent Offline";
                 }
@@ -449,7 +462,7 @@
                 pulse.style.display = "none";
                 label.innerText = "Agent Offline";
             }
-        });
+        }
 
         // Live Functionality
         window.sendCommand = async function() {
@@ -490,8 +503,30 @@
                             ? `<pre style="font-size:0.75rem; margin-top:0.5rem; background:rgba(0,0,0,0.2); padding:0.5rem; border-radius:0.5rem;">${JSON.stringify(resultData, null, 2)}</pre>`
                             : resultData;
                         addMessage(`<b>Result:</b> ${formattedResult}`, 'bot');
+                    } else if (data.status === "error") {
+                        addMessage(`❌ <b>Error:</b> ${data.message || "Command failed"}`, 'bot');
                     } else if (data.status === "request_confirmation") {
-                        showSafety(data.message, change.doc.id);
+                        // Check if we've already shown this request to avoid duplicates
+                        const existingRequest = document.getElementById(`req-${change.doc.id}`);
+                        if (!existingRequest) {
+                            const container = document.getElementById('history');
+                            const msg = document.createElement('div');
+                            msg.id = `req-${change.doc.id}`;
+                            msg.className = `message bot security-request`;
+                            msg.innerHTML = `
+                                <div style="border-left: 3px solid #ef4444; padding-left: 0.75rem;">
+                                    <p style="color: #ef4444; font-weight: 700; font-size: 0.75rem; margin-bottom: 0.25rem;">🛡️ SECURITY APPROVAL</p>
+                                    <p>${data.message}</p>
+                                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                                        <button onclick="confirmSafety(true, '${change.doc.id}')" style="flex:1; background: #10b981; border:none; color:white; padding: 0.6rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.8rem;">Approve</button>
+                                        <button onclick="confirmSafety(false, '${change.doc.id}')" style="flex:1; background: rgba(255,255,255,0.1); border:1px solid #ef4444; color:white; padding: 0.6rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.8rem;">Deny</button>
+                                    </div>
+                                </div>
+                                <span class="time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                            `;
+                            container.appendChild(msg);
+                            container.scrollTop = container.scrollHeight;
+                        }
                     }
                 }
             });
@@ -506,22 +541,20 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        let activeDocId = null;
-        window.showSafety = function(msg, docId) {
-            activeDocId = docId;
-            document.getElementById('safetyMsg').innerText = msg;
-            document.getElementById('safetyModal').style.display = 'flex';
-        }
-
-        window.confirmSafety = async function(approved) {
-            document.getElementById('safetyModal').style.display = 'none';
-            if (activeDocId) {
-                const docRef = doc(db, "commands", activeDocId);
+        window.confirmSafety = async function(approved, docId) {
+            const reqMsg = document.getElementById(`req-${docId}`);
+            if (reqMsg) reqMsg.style.opacity = '0.5'; // Visual feedback
+            
+            try {
+                const docRef = doc(db, "commands", docId);
                 await updateDoc(docRef, {
                     status: approved ? "approved" : "denied"
                 });
+                
+                if (reqMsg) reqMsg.remove(); // Clean up the request bubble
                 addMessage(approved ? "✅ Action Approved" : "❌ Action Denied", "bot");
-                activeDocId = null;
+            } catch (e) {
+                console.error("Confirmation error:", e);
             }
         }
     </script>

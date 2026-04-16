@@ -108,64 +108,65 @@ def launch_app(name):
         return {"status": "error", "message": f"Error: {str(e)}"}
 
 def get_system_info(metric="all"):
-    info = {}
-    if metric in ["cpu", "all"]:
-        info["cpu_usage"] = f"{psutil.cpu_percent()}%"
-    if metric in ["mem", "all"]:
-        info["memory_usage"] = f"{psutil.virtual_memory().percent}%"
-    if metric in ["disk", "all"]:
-        info["disk_usage"] = f"{psutil.disk_usage('/').percent}%"
-    
-    # Add Heat/Temperatures if requested or in 'all'
-    if metric in ["temp", "heat", "all"]:
-        # GPU Temp (RTX 3050)
-        if GPUtil:
-            try:
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    info["gpu_temp"] = f"{gpus[0].temperature}°C"
-                    info["gpu_load"] = f"{gpus[0].load*100}%"
-            except:
-                pass
+    try:
+        info = {}
+        if metric in ["cpu", "all"]:
+            info["cpu_usage"] = f"{psutil.cpu_percent()}%"
+        if metric in ["mem", "all"]:
+            info["memory_usage"] = f"{psutil.virtual_memory().percent}%"
+        if metric in ["disk", "all"]:
+            info["disk_usage"] = f"{psutil.disk_usage('/').percent}%"
         
-        # CPU Temp (WMI - Windows)
-        if wmi:
-            try:
-                w = wmi.WMI(namespace="root\\wmi")
-                # Note: This WMI class is hardware-dependent and might need Admin privs
-                temps = w.MSAcpi_ThermalZoneTemperature()
-                if temps:
-                    # WMI returns temp in Kelvin * 10
-                    celsius = (temps[0].CurrentTemperature / 10.0) - 273.15
-                    info["cpu_temp"] = f"{round(celsius, 1)}°C"
-            except:
-                pass
+        # Safe Temp/Heat checks (highly prone to hardware/permission errors)
+        if metric in ["temp", "heat", "all"]:
+            # GPU (NVIDIA)
+            if GPUtil:
+                try:
+                    gpus = GPUtil.getGPUs()
+                    if gpus:
+                        info["gpu_temp"] = f"{gpus[0].temperature}°C"
+                except: pass
+            # CPU
+            if wmi:
+                try:
+                    w = wmi.WMI(namespace="root\\wmi")
+                    temps = w.MSAcpi_ThermalZoneTemperature()
+                    if temps:
+                        celsius = (temps[0].CurrentTemperature / 10.0) - 273.15
+                        info["cpu_temp"] = f"{round(celsius, 1)}°C"
+                except: pass
 
-    return {"status": "success", "data": info}
+        return {"status": "success", "data": info}
+    except Exception as e:
+        return {"status": "error", "message": f"Telemetry failed: {str(e)}"}
 
 def control_media(action, app_hint=None):
     try:
-        # 1. Provide Focus (Optional but recommended for reliability)
+        import time
+        # 1. Provide Focus (Crucial for suspended/minimized apps)
         focus_msg = ""
         if gw and app_hint:
             try:
-                # Find windows that contain the app_hint (e.g. "Spotify")
-                windows = gw.getWindowsWithTitle(app_hint)
-                if not windows:
-                    # Try a slightly more fuzzy search
-                    windows = [w for w in gw.getAllWindows() if app_hint.lower() in w.title.lower()]
+                # Fuzzy search across all windows
+                target_win = None
+                all_wins = gw.getAllWindows()
+                for w in all_wins:
+                    if app_hint.lower() in w.title.lower():
+                        target_win = w
+                        break
                 
-                if windows:
-                    window = windows[0]
-                    if not window.isActive:
-                        if window.isMinimized:
-                            window.restore()
-                        window.activate()
-                    focus_msg = f"Focused '{window.title}'. "
+                if target_win:
+                    if target_win.isMinimized:
+                        target_win.restore()
+                        time.sleep(0.5) # Wait for "Repaint/Wake up"
+                    
+                    target_win.activate()
+                    time.sleep(0.2)
+                    focus_msg = f"Resurrected '{target_win.title}'. "
             except Exception as fe:
-                focus_msg = f"(Focus failed: {str(fe)}) "
+                focus_msg = f"(Wake-up failed: {str(fe)}) "
 
-        # 2. Key Mapping
+        # 2. Key Mapping (Standardize Resume to PlayPause)
         mapping = {
             "play": "playpause",
             "play_song": "playpause",
@@ -174,7 +175,11 @@ def control_media(action, app_hint=None):
             "resume": "playpause",
             "play_pause": "playpause",
             "next": "nexttrack",
+            "next_song": "nexttrack",
+            "change": "nexttrack",
+            "change_song": "nexttrack",
             "skip": "nexttrack",
+            "skip_song": "nexttrack",
             "previous": "prevtrack",
             "back": "prevtrack",
             "volume_up": "volumeup",
@@ -184,8 +189,13 @@ def control_media(action, app_hint=None):
         
         key = mapping.get(action.lower())
         if key:
-            pyautogui.press(key)
-            return {"status": "success", "message": f"{focus_msg}Media action executed: {action}"}
+            if "volume" in key:
+                # Boost volume steps: 5 presses = ~10% change for snappier control
+                for _ in range(5):
+                    pyautogui.press(key)
+            else:
+                pyautogui.press(key)
+            return {"status": "success", "message": f"{focus_msg}Media action: {action}"}
         else:
             return {"status": "error", "message": f"Unknown media action: {action}"}
     except Exception as e:
@@ -194,6 +204,10 @@ def control_media(action, app_hint=None):
 def type_text(text):
     pyautogui.write(text, interval=0.1)
     return {"status": "success", "message": f"Typed: {text}"}
+
+def press_key(key):
+    pyautogui.press(key)
+    return {"status": "success", "message": f"Pressed key: {key}"}
 
 def terminate_process(name):
     count = 0
@@ -210,6 +224,28 @@ def delete_file(path):
         return {"status": "success", "message": f"Deleted {path}"}
     else:
         return {"status": "error", "message": "File not found"}
+
+@requires_confirmation
+def create_file(name, content="", append=False):
+    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+    # If name is just a filename, put it on desktop. Otherwise treat as path.
+    path = name if os.path.isabs(name) else os.path.join(desktop, name)
+    
+    mode = "a" if append else "w"
+    with open(path, mode, encoding="utf-8") as f:
+        # If appending, add a newline first
+        if append and os.path.exists(path):
+            f.write("\n")
+        f.write(content)
+    return {"status": "success", "message": f"File {'appended' if append else 'created'} at {path}"}
+
+@requires_confirmation
+def create_folder(name):
+    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+    path = name if os.path.isabs(name) else os.path.join(desktop, name)
+    
+    os.makedirs(path, exist_ok=True)
+    return {"status": "success", "message": f"Folder created at {path}"}
 
 # Helper to execute a pending action after approval
 def confirm_action(action_id):

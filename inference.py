@@ -21,75 +21,127 @@ def load_agent_model(model_path="qwen_assistant_lora"):
     return model, tokenizer
 
 def repair_json_string(s):
-    """Common fixes for small model JSON hallucinations"""
-    # Fix missing "parameters" key: {"tool": "name", {}} -> {"tool": "name", "parameters": {}}
-    # This regex handles both single (') and double (") quotes efficiently
-    s = re.sub(r'["\'],?\s*{', '", "parameters": {', s)
-    # Ensure balanced braces
+    """Aggressive fixes for small model (1.5B) JSON hallucinations"""
+    # 1. Standardize quotes
+    s = s.replace("'", '"')
+    
+    # 2. Fix missing colons or quotes around keys (common 1.5B fail)
+    # Fix {"tool" "name"} or {tool: "name"}
+    s = re.sub(r'(\{|,)\s*"?(\w+)"?\s*(\s|:)\s*', r'\1"\2": ', s)
+    
+    # 3. Fix missing "parameters" key: {"tool": "name", {}} -> {"tool": "name", "parameters": {}}
+    s = re.sub(r'("\w+"),?\s*\{', r'\1, "parameters": {', s)
+    
+    # 4. Ensure balanced braces
     if s.count('{') > s.count('}'):
         s += '}' * (s.count('{') - s.count('}'))
     
-    # Clean up any trailing text after the last brace
+    # 5. Greedy clip: get the last valid JSON block
     last_brace = s.rfind('}')
     if last_brace != -1:
         s = s[:last_brace+1]
         
     return s
 
+# Neural Blueprint: Spider-Arm v2.5 Capabilities
+SYSTEM_PROMPT = """You are Spider-Arm v2.5, a professional PC assistant. 
+Execute instructions using ONLY the tools below. NEVER invent or hallucinate new tools.
+If a user is creative/informal, map their intent to the best possible available tool.
+
+AVAILABLE TOOLS:
+1. launch_app(name): Launches apps/shortcuts. Supports aliases: 'browser' (Brave), 'terminal', 'calculator', 'notepad'.
+2. screenshot(): Captures the screen.
+3. get_system_info(metric): stats like 'cpu', 'mem', 'disk', 'temp', or 'all'.
+4. control_media(action, app_hint): actions: 'play_pause' (use for play/resume/pause), 'next', 'previous', 'volume_up', 'volume_down'. Use app_hint (e.g., 'Spotify', 'Chrome') to wake up the app.
+5. type_text(text): Types keyboard input.
+6. terminate_process(name): Closes an app by name.
+7. delete_file(path): Deletes a file (Requires approval).
+8. confirm_action(action_id): Approves a pending action.
+
+9. create_file(name, content, append): Creates/Overwrites a file. Set append=True to add text to the end.
+10. create_folder(name): Creates a folder (Default: Desktop).
+11. press_key(key): Presses a single key (e.g., 'enter', 'space', 'tab', 'esc').
+
+EXAMPLES:
+- "Create a note called hello.txt saying hi" -> ### Thought: Writing a file. ### Action: {"tool": "create_file", "parameters": {"name": "hello.txt", "content": "hi", "append": false}}
+- "Add 'Remember to buy milk' to notes.txt" -> ### Thought: Appending to file. ### Action: {"tool": "create_file", "parameters": {"name": "notes.txt", "content": "Remember to buy milk", "append": true}}
+- "Write to my work.txt and say Done" -> ### Thought: Persistence request. Use create_file tool. ### Action: {"tool": "create_file", "parameters": {"name": "work.txt", "content": "Done", "append": false}}
+- "Open spotify" -> ### Thought: Need to open music player. ### Action: {"tool": "launch_app", "parameters": {"name": "spotify"}}
+- "Resume the music" -> ### Thought: Toggle play/pause. Use app_hint for reliability. ### Action: {"tool": "control_media", "parameters": {"action": "play_pause", "app_hint": "spotify"}}
+- "Next song" -> ### Thought: Skip music. ### Action: {"tool": "control_media", "parameters": {"action": "next", "app_hint": "spotify"}}
+- "Volume up" -> ### Thought: Increase PC audio. ### Action: {"tool": "control_media", "parameters": {"action": "volume_up"}}
+- "Silence the PC" -> ### Thought: Mute audio. ### Action: {"tool": "control_media", "parameters": {"action": "mute"}}
+- "Check battery/heat" -> ### Thought: Telemetry check. ### Action: {"tool": "get_system_info", "parameters": {"metric": "all"}}
+"""
+
 def get_agent_response(model, tokenizer, instruction, history=""):
-    # Clearer formatting hint for the model
-    format_hint = ' (Format: {"tool": "name", "parameters": {}})'
-    prompt = f"### Instruction:\n{instruction}{format_hint}\n\n### Thought:\n"
+    # Unified Premium Prompt
+    prompt = f"{SYSTEM_PROMPT}\n### Instruction:\n{instruction}\n\n### Thought:\n"
     inputs = tokenizer([prompt], return_tensors = "pt").to("cuda")
+    input_ids = inputs.input_ids
+    # Use greedy decoding (do_sample=False) for maximum tool-calling precision
+    outputs = model.generate(input_ids, max_new_tokens = 256, use_cache = True, do_sample=False)
     
-    outputs = model.generate(**inputs, max_new_tokens = 256, use_cache = True)
-    response = tokenizer.batch_decode(outputs)[0]
+    # Only decode the NEW tokens (ignoring the instructions and examples in the prompt)
+    generated_text = tokenizer.decode(outputs[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
     
-    # Clean special tokens and whitespace
-    clean_response = response.replace("<|endoftext|>", "").strip()
+    print(f"[DEBUG] Model Output: {generated_text}")
+    clean_response = generated_text
     
-    # Extract Action from response
+    # --- FLEXIBLE PARSING LOGIC ---
+    # We look for a JSON block anywhere in the response if it failed the strict header check
+    action_str = None
+    
+    # 1. Try strict Action header first
     if "### Action:" in clean_response:
+        parts = clean_response.split("### Action:")
+        action_section = parts[-1].strip()
+        start = action_section.find("{")
+        end = action_section.rfind("}") + 1
+        if start != -1 and end != -1:
+            action_str = action_section[start:end]
+            
+    # 2. Fallback: Search the whole response for any JSON block
+    if not action_str:
+        start = clean_response.find("{")
+        end = clean_response.rfind("}") + 1
+        if start != -1 and end != -1:
+            action_str = clean_response[start:end]
+            
+    if action_str:
         try:
-            # We split and take everything after the LAST '### Action:' if multiple exist
-            parts = clean_response.split("### Action:")
-            action_section = parts[-1].strip()
+            # Apply SMART REPAIR to handle hallucinations
+            repaired_str = repair_json_string(action_str)
             
-            # Find the first JSON-like block
-            start = action_section.find("{")
-            end = action_section.rfind("}") + 1
+            # Final check: Python's json loader is strict. 
+            # If the model added text AFTER the JSON (Extra Data), rfind('}') + 1 already clipped it.
+            action_data = json.loads(repaired_str)
             
-            if start != -1 and end != -1:
-                action_str = action_section[start:end]
-                
-                # Apply SMART REPAIR
-                repaired_str = repair_json_string(action_str)
-                if repaired_str != action_str:
-                    print(f"[SPIDER-ARM] Handled model syntax error via Smart-Repair.")
-                
-                action_data = json.loads(repaired_str)
-                
-                # Normalize keys: accept 'args', 'params', or 'parameters'
-                params = action_data.get("parameters") or action_data.get("args") or action_data.get("params") or {}
-                action_data["parameters"] = params
-                
-                # Standardize tool names (Aliasing)
-                tool_aliases = {
-                    "get_system_telemetry": "get_system_info",
-                    "close_app": "terminate_process",
-                    "open_app": "launch_app"
-                }
-                
-                if "tool" in action_data:
-                    current_tool = action_data["tool"]
-                    if current_tool in tool_aliases:
-                        print(f"[DEBUG] Aliasing tool '{current_tool}' -> '{tool_aliases[current_tool]}'")
-                        action_data["tool"] = tool_aliases[current_tool]
-                
-                return action_data
+            # Normalize keys: accept 'args', 'params', or 'parameters'
+            params = action_data.get("parameters") or action_data.get("args") or action_data.get("params") or {}
+            action_data["parameters"] = params
+            
+            # Standardize tool names (Aliasing)
+            tool_aliases = {
+                "get_system_telemetry": "get_system_info",
+                "get_telemetry": "get_system_info",
+                "capture_screenshot": "screenshot",
+                "take_screenshot": "screenshot",
+                "close_app": "terminate_process",
+                "open_app": "launch_app"
+            }
+            
+            if "tool" in action_data:
+                current_tool = action_data["tool"]
+                if current_tool in tool_aliases:
+                    print(f"[DEBUG] Aliasing tool '{current_tool}' -> '{tool_aliases[current_tool]}'")
+                    action_data["tool"] = tool_aliases[current_tool]
+            
+            return action_data
         except Exception as e:
-            print(f"[DEBUG] Parse error: {e}")
+            print(f"[DEBUG] Robust Parse failed: {e}")
             return None
+            
     return None
 
 def agent_loop():
@@ -104,7 +156,10 @@ def agent_loop():
         "terminate_process": lambda p: terminate_process(p.get("name")),
         "delete_file": lambda p: delete_file(p.get("path")),
         "confirm_action": lambda p: confirm_action(p.get("action_id")),
-        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint"))
+        "control_media": lambda p: control_media(p.get("action"), p.get("app_hint")),
+        "create_file": lambda p: create_file(p.get("name"), p.get("content", ""), p.get("append", False)),
+        "create_folder": lambda p: create_folder(p.get("name")),
+        "press_key": lambda p: press_key(p.get("key"))
     }
 
     print("[SPIDER-ARM] Ready! Waiting for input...")
