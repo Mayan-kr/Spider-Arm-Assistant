@@ -108,7 +108,7 @@ def setup():
             app_id = None
             if not apps:
                 print("No Web App found in this project. Registering 'Spider Dashboard'...")
-                run_cmd(f"firebase apps:create WEB 'Spider Dashboard' --project {selected}", capture_output=False)
+                run_cmd(f'firebase apps:create WEB "Spider Dashboard" --project {selected}', capture_output=False)
                 # Re-fetch
                 apps_out = run_cmd(f"firebase apps:list WEB --project {selected} --json")
                 apps = json.loads(apps_out).get("result", [])
@@ -132,29 +132,33 @@ def setup():
         if not res: return
         project_id, web_config = res
         # Switch CLI to this project
-        run_cmd(f"firebase use {project_id}", capture_output=False)
+        run_cmd(f"firebase use {project_id} --alias default", capture_output=False)
 
     else:
         # --- CREATE NEW ---
         project_id = generate_id()
         def create_project():
             print(f"Creating project '{project_id}'... this takes ~30 seconds.")
-            run_cmd(f"firebase projects:create {project_id} --display-name 'Spider Arm Assistant'", capture_output=False)
-            run_cmd(f"firebase use {project_id}", capture_output=False)
+            run_cmd(f'firebase projects:create {project_id} --display-name "Spider Arm Assistant"', capture_output=False)
+            print("Waiting for cloud provisioning...")
+            time.sleep(5) # Give the backend a moment to stabilize
+            run_cmd(f"firebase use {project_id} --alias default", capture_output=False)
             return True
 
         if not run_step(f"Provisioning Cloud Project ({project_id})", create_project): return
 
         def enable_firestore():
             print("Initializing Firestore Database (Region: us-central)...")
-            run_cmd(f"firebase firestore:databases:create (default) --location us-central", capture_output=False)
+            run_cmd(f"firebase firestore:databases:create --location us-central --project {project_id}", capture_output=False)
             return True
         run_step("Activating Firestore Database", enable_firestore)
 
         def register_app():
             print("Registering the 'Spider Dashboard' Web App...")
-            run_cmd(f"firebase apps:create WEB 'Spider Dashboard'", capture_output=False)
-            config_out = run_cmd("firebase apps:sdkconfig WEB --json")
+            run_cmd(f'firebase apps:create WEB "Spider Dashboard" --project {project_id}', capture_output=False)
+            print("Syncing app metadata...")
+            time.sleep(5) # Allow SDK config to propagate
+            config_out = run_cmd(f"firebase apps:sdkconfig WEB --project {project_id} --json")
             if config_out:
                 data = json.loads(config_out)
                 return data.get("result", {}).get("sdkConfig")
@@ -187,12 +191,17 @@ def setup():
     # --- 4. SERVICE ACCOUNT ---
     def fetch_service_account():
         print("\n[SECURITY LINKING]")
-        print("1. Your browser will open to the Service Accounts page.")
-        print("2. Click 'Generate New Private Key'.")
-        print("3. Paste the ENTIRE content of that JSON file here.")
+        print("1. Your browser will open TWO tabs. Please follow these steps:")
+        print("   -> Tab 1 (AUTH): Click 'Get Started', then 'Google', enable it and hit SAVE.")
+        print("   -> Tab 2 (KEYS): Click 'Generate New Private Key'.")
+        print("2. Once you have the Key JSON, paste its content below.")
         
-        url = f"https://console.firebase.google.com/project/{project_id}/settings/serviceaccounts/adminsdk"
-        webbrowser.open(url)
+        auth_url = f"https://console.firebase.google.com/project/{project_id}/authentication/providers"
+        sa_url = f"https://console.firebase.google.com/project/{project_id}/settings/serviceaccounts/adminsdk"
+        
+        webbrowser.open(auth_url)
+        time.sleep(2)
+        webbrowser.open(sa_url)
         
         print("\nPaste the JSON content (Press Enter on empty line when finished):")
         lines = []
