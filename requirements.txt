@@ -1,0 +1,11 @@
+firebase-admin
+torch
+unsloth
+trl
+transformers
+datasets
+psutil
+pyautogui
+GPUtil
+wmi
+pygetwindow

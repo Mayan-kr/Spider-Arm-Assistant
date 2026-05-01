@@ -10,6 +10,7 @@ Welcome to **Spider-Arm v2.0**. This guide will help you manage your local agent
 
 ```powershell
 .\venv_312\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ---
@@ -17,8 +18,8 @@ Welcome to **Spider-Arm v2.0**. This guide will help you manage your local agent
 ## 2. Training & Brain Updates
 Run these commands if you add new training examples to `data/pc_control_dataset.jsonl`.
 
-### Fine-Tuning (3-5 minutes)
-This teaches the model your specific PC control patterns.
+### Fine-Tuning
+This teaches the model your specific PC control patterns. *(Note: `setup_wizard.py` automatically runs this for you on your first setup!)*
 ```powershell
 python train.py
 ```

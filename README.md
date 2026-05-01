@@ -82,12 +82,13 @@ cd Spider-Arm-Assistant
 # 2. Create your isolated environment
 python -m venv venv_312
 .\venv_312\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ---
 
 ### 🕷️ Phase 3: The "Architect" Wizard
-Run the wizard to build your entire Cloud Infrastructure automatically:
+Run the wizard to build your entire Cloud Infrastructure automatically and compile the AI Brain:
 ```powershell
 python setup_wizard.py
 ```

@@ -191,33 +191,43 @@ def setup():
     # --- 4. SERVICE ACCOUNT ---
     def fetch_service_account():
         print("\n[SECURITY LINKING]")
-        print("1. Your browser will open TWO tabs. Please follow these steps:")
-        print("   -> Tab 1 (AUTH): Click 'Get Started', then 'Google', enable it and hit SAVE.")
-        print("   -> Tab 2 (KEYS): Click 'Generate New Private Key'.")
-        print("2. Once you have the Key JSON, paste its content below.")
-        
+        print("1. STEP 1: Enable Authentication")
+        print("   -> Your browser will open the AUTH page.")
+        print("   -> Click 'Get Started' -> 'Google' -> Enable -> SAVE.")
         auth_url = f"https://console.firebase.google.com/project/{project_id}/authentication/providers"
-        sa_url = f"https://console.firebase.google.com/project/{project_id}/settings/serviceaccounts/adminsdk"
-        
         webbrowser.open(auth_url)
-        time.sleep(2)
+        
+        get_input("\nPress ENTER once you have enabled Google Sign-In to proceed to Key Generation")
+        
+        print("\n2. STEP 2: Generate Private Key")
+        print("   -> Your browser will open the SERVICE ACCOUNTS page.")
+        print("   -> Click 'Generate New Private Key' -> 'Create Key'.")
+        sa_url = f"https://console.firebase.google.com/project/{project_id}/settings/serviceaccounts/adminsdk"
         webbrowser.open(sa_url)
         
-        print("\nPaste the JSON content (Press Enter on empty line when finished):")
+        print("\n3. STEP 3: Paste JSON Content")
+        print("   -> Open the downloaded JSON and paste its ENTIRE content here.")
+        print("   -> (Press Enter on an empty line when finished):")
+        
         lines = []
         while True:
-            line = input()
+            line = input().strip()
             if line == "": break
             lines.append(line)
         
+        raw_json = "".join(lines)
+        # Sanitization: Remove common copy-paste artifacts
+        raw_json = raw_json.strip().replace('\x1b', '').replace('\x07', '')
+        
         try:
-            sa_data = json.loads("".join(lines))
+            sa_data = json.loads(raw_json)
             vault["service_account"] = sa_data
             with open("credentials.json", "w") as f:
                 json.dump(vault, f, indent=4)
             return True
-        except:
-            print("[ERROR] Invalid JSON pasted.")
+        except json.JSONDecodeError as e:
+            print(f"[ERROR] Invalid JSON formatting: {e}")
+            print("Tip: Make sure you copied the entire file content, including { and }.")
             return False
 
     if not run_step("Linking Security Systems (Service Account)", fetch_service_account): return
@@ -229,6 +239,19 @@ def setup():
         return True
 
     run_step("Live Deployment", deploy_systems)
+
+    # --- 6. BRAIN GENERATION ---
+    def compile_brain():
+        if not os.path.exists("qwen_assistant_lora"):
+            print("AI Brain not found. Starting compilation (This takes 3-5 minutes)...")
+            # Run the train.py script
+            run_cmd("python train.py", capture_output=False)
+            return True
+        else:
+            print("AI Brain already compiled. Skipping.")
+            return True
+            
+    run_step("AI Brain Compilation", compile_brain)
 
     print("\n" + "="*70)
     print("      🎊  HYBRID SETUP COMPLETE! SPIDER-ARM IS LIVE 🎊")

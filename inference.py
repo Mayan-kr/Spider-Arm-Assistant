@@ -12,6 +12,13 @@ import re
 # This script handles the local AI inference using Unsloth 4-bit quantization.
 
 def load_agent_model(model_path="qwen_assistant_lora"):
+    import os
+    if not os.path.exists(model_path):
+        print(f"\n[CRITICAL ERROR] The AI Brain ({model_path}) was not found.")
+        print("This usually happens on a fresh install. Please run 'python setup_wizard.py' to generate it.")
+        import sys
+        sys.exit(1)
+        
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name = model_path,
         max_seq_length = 2048,
