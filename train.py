@@ -42,19 +42,19 @@ def run_training():
         packing = False, # Can speed up for short sequences
         args = TrainingArguments(
             per_device_train_batch_size = 1, # Minimal VRAM usage
-            gradient_accumulation_steps = 16, # Achieve effective batch size
-            warmup_steps = 5,
-            max_steps = 30, # Small example run
+            gradient_accumulation_steps = 16, # Effective batch size = 16
+            warmup_steps = 10,               # ~2 epochs of warmup for stable start
+            num_train_epochs = 30,           # 30 full passes over the dataset
             learning_rate = 2e-4,
             fp16 = not torch.cuda.is_bf16_supported(),
             bf16 = torch.cuda.is_bf16_supported(),
-            logging_steps = 1,
+            logging_steps = 5,
             optim = "adamw_8bit",
             weight_decay = 0.01,
-            lr_scheduler_type = "linear",
+            lr_scheduler_type = "cosine",    # Cosine decay: better final convergence than linear
             seed = 3407,
             output_dir = "outputs",
-            save_strategy = "no", # Prevent mid-training lock issues
+            save_strategy = "no",            # Prevent mid-training lock issues
         ),
     )
 

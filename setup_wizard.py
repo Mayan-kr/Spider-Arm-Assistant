@@ -7,13 +7,21 @@ import random
 import string
 import webbrowser
 import time
+import shutil
+
+# Anchor all file I/O to the project root (the directory this script lives in),
+# regardless of what directory the user runs it from.
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_banner():
     print("="*70)
-    print("      🕷️  Spider-ARM: Hybrid 'Cloud Architect' Wizard v2.5 🕷️")
+    try:
+        print("      \U0001f577\ufe0f  Spider-ARM: Hybrid 'Cloud Architect' Wizard v2.5 \U0001f577\ufe0f")
+    except UnicodeEncodeError:
+        print("      [*]  Spider-ARM: Hybrid 'Cloud Architect' Wizard v2.5 [*]")
     print("="*70)
     print("Build or Link your Firebase Infrastructure in minutes.")
     print("Requirement: You must have the Firebase CLI installed.\n")
@@ -53,9 +61,22 @@ def generate_id(prefix="spider-arm"):
     suffix = ''.join(random.choices(string.digits, k=4))
     return f"{prefix}-{suffix}"
 
+def check_firebase_cli():
+    """Verifies the Firebase CLI is installed before doing anything else."""
+    if shutil.which("firebase") is None:
+        print("\n[FATAL] Firebase CLI not found on PATH.")
+        print("Please install it first:")
+        print("  npm install -g firebase-tools")
+        print("  OR  https://firebase.google.com/docs/cli")
+        sys.exit(1)
+    print("[OK] Firebase CLI detected.")
+
 def setup():
     clear()
     print_banner()
+
+    # --- 0. PRE-FLIGHT: Ensure Firebase CLI exists ---
+    check_firebase_cli()
 
     # --- 1. AUTH CHECK ---
     def check_auth():
@@ -139,10 +160,16 @@ def setup():
         project_id = generate_id()
         def create_project():
             print(f"Creating project '{project_id}'... this takes ~30 seconds.")
-            run_cmd(f'firebase projects:create {project_id} --display-name "Spider Arm Assistant"', capture_output=False)
+            result = run_cmd(f'firebase projects:create {project_id} --display-name "Spider Arm Assistant"', capture_output=False)
+            if result is None:
+                print("[ERROR] Project creation command failed. Check Firebase CLI output above.")
+                return False
             print("Waiting for cloud provisioning...")
-            time.sleep(5) # Give the backend a moment to stabilize
-            run_cmd(f"firebase use {project_id} --alias default", capture_output=False)
+            time.sleep(10)  # Give the backend time to stabilize
+            use_result = run_cmd(f"firebase use {project_id} --alias default", capture_output=False)
+            if use_result is None:
+                print("[ERROR] Could not switch to new project. It may not have been created.")
+                return False
             return True
 
         if not run_step(f"Provisioning Cloud Project ({project_id})", create_project): return
@@ -156,12 +183,23 @@ def setup():
         def register_app():
             print("Registering the 'Spider Dashboard' Web App...")
             run_cmd(f'firebase apps:create WEB "Spider Dashboard" --project {project_id}', capture_output=False)
-            print("Syncing app metadata...")
-            time.sleep(5) # Allow SDK config to propagate
-            config_out = run_cmd(f"firebase apps:sdkconfig WEB --project {project_id} --json")
-            if config_out:
-                data = json.loads(config_out)
-                return data.get("result", {}).get("sdkConfig")
+            print("Syncing app metadata (waiting 15 seconds for propagation)...")
+            # Count down visibly so the user knows the wizard isn't frozen
+            for i in range(15, 0, -1):
+                print(f"  {i}s remaining...", end="\r")
+                time.sleep(1)
+            print(" " * 30, end="\r")  # Clear countdown line
+            # Retry up to 3 times in case SDK config hasn't propagated yet
+            for attempt in range(1, 4):
+                config_out = run_cmd(f"firebase apps:sdkconfig WEB --project {project_id} --json")
+                if config_out:
+                    data = json.loads(config_out)
+                    sdk = data.get("result", {}).get("sdkConfig")
+                    if sdk:
+                        return sdk
+                print(f"  [RETRY {attempt}/3] SDK config not ready yet, waiting 10 more seconds...")
+                time.sleep(10)
+            print("[ERROR] Could not fetch SDK config after 3 attempts.")
             return None
 
         web_config = run_step("Registering Web Dashboard", register_app)
@@ -180,13 +218,22 @@ def setup():
             "service_account": None
         }
         
+        # Use absolute paths anchored to project root so this works
+        # regardless of where the user runs the wizard from.
+        mobile_dir = os.path.join(PROJECT_ROOT, "mobile")
+        os.makedirs(mobile_dir, exist_ok=True)
         js_content = "export const firebaseConfig = " + json.dumps(web_config, indent=4) + ";"
-        with open("mobile/firebase-config.js", "w") as f:
+        with open(os.path.join(mobile_dir, "firebase-config.js"), "w") as f:
             f.write(js_content)
         
         return vault
 
     vault = run_step("Generating Unified Vault & Dashboard Config", save_vault)
+
+    # Guard: if vault step failed, do not proceed to service account step
+    if not vault or not isinstance(vault, dict):
+        print("[CRITICAL] Vault generation failed. Cannot proceed to service account linking.")
+        return
 
     # --- 4. SERVICE ACCOUNT ---
     def fetch_service_account():
@@ -222,8 +269,10 @@ def setup():
         try:
             sa_data = json.loads(raw_json)
             vault["service_account"] = sa_data
-            with open("credentials.json", "w") as f:
+            cred_path = os.path.join(PROJECT_ROOT, "credentials.json")
+            with open(cred_path, "w") as f:
                 json.dump(vault, f, indent=4)
+            print(f"[OK] Credentials saved to: {cred_path}")
             return True
         except json.JSONDecodeError as e:
             print(f"[ERROR] Invalid JSON formatting: {e}")
@@ -242,10 +291,19 @@ def setup():
 
     # --- 6. BRAIN GENERATION ---
     def compile_brain():
-        if not os.path.exists("qwen_assistant_lora"):
+        model_dir = os.path.join(PROJECT_ROOT, "qwen_assistant_lora")
+        if not os.path.exists(model_dir):
             print("AI Brain not found. Starting compilation (This takes 3-5 minutes)...")
-            # Run the train.py script
-            run_cmd("python train.py", capture_output=False)
+            # Use sys.executable to target the active venv Python, and an absolute
+            # path so this works regardless of the working directory at call time.
+            train_script = os.path.join(PROJECT_ROOT, "train.py")
+            run_cmd(f'"{sys.executable}" "{train_script}"', capture_output=False)
+
+            # Verify training actually produced a model
+            if not os.path.exists(model_dir):
+                print("[ERROR] Training completed but no model folder was created.")
+                print("Check the output above for errors. You can re-run 'python train.py' manually.")
+                return False
             return True
         else:
             print("AI Brain already compiled. Skipping.")
@@ -254,14 +312,17 @@ def setup():
     run_step("AI Brain Compilation", compile_brain)
 
     print("\n" + "="*70)
-    print("      🎊  HYBRID SETUP COMPLETE! SPIDER-ARM IS LIVE 🎊")
+    try:
+        print("      \U0001f38a  HYBRID SETUP COMPLETE! SPIDER-ARM IS LIVE \U0001f38a")
+    except UnicodeEncodeError:
+        print("      [**]  HYBRID SETUP COMPLETE! SPIDER-ARM IS LIVE [**]")
     print("="*70)
     print(f"Project ID: {project_id}")
     print(f"Dashboard URL: https://{project_id}.web.app")
     print("\nNext steps:")
     print("1. Open the URL on your phone.")
     print("2. Run 'python -m backend.firebase_bridge' to start the bridge.")
-    print("\nWelcome back to the loop! 🕸️🤖")
+    print("\nWelcome back to the loop! \U0001f578\ufe0f\U0001f916")
 
 if __name__ == "__main__":
     try:

@@ -18,26 +18,21 @@ def test_inference():
     instruction = "Take a screenshot and check my disk space."
     print(f"[TEST] Instruction: {instruction}")
     
-    # FORMAT FOR QWEN 2.5 VL / QWEN 3.5 MODELS
-    messages = [
-        {"role": "user", "content": [{"type": "text", "text": f"### Instruction:\n{instruction}\n\n### Thought:\n"}]}
-    ]
-    
-    # We use the raw prompt if specialized templates fail
     prompt = f"### Instruction:\n{instruction}\n\n### Thought:\n"
     
     inputs = tokenizer(prompt, return_tensors = "pt").to("cuda")
     
-    # CRITICAL: We pass only text attributes
     print(f"[TEST] Generating...")
     outputs = model.generate(
         input_ids = inputs.input_ids,
         attention_mask = inputs.attention_mask,
         max_new_tokens = 128,
         use_cache = True,
+        do_sample = False,  # Greedy decoding for deterministic tool calls
     )
     
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Only decode the NEW tokens — strip the prompt from the output
+    response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
     print("-" * 30)
     print(response)
     print("-" * 30)

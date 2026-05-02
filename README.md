@@ -1,139 +1,179 @@
-# 🕷️ Spider-Arm Assistant v2.5 (Zero-Touch Edition)
+# 🕷️ Spider-Arm Assistant v2.5
 
-A professional, local agentic AI assistant powered by **Qwen2.5-1.5B (Fine-Tuned LoRA)**. Spider-Arm provides real-time PC control, hardware monitoring, and high-precision app launching through a premium, "Spider-Themed" mobile remote dashboard. 
+> **Control your Windows PC from your phone using voice-friendly natural language — powered by a local AI model, no cloud inference fees.**
+
+Spider-Arm is a personal AI assistant that runs a fine-tuned **Qwen2.5-1.5B** model locally on your GPU. You send it a plain-English command (e.g. *"take a screenshot"*, *"play the next song"*, *"check my CPU temp"*) from a mobile web dashboard, and it figures out which tool to execute on your PC.
 
 ---
 
-## 🌟 What's New in v2.5
-- **Spider Theme**: A complete UI overhaul with a high-contrast Red & Black "Spider" aesthetic.
-- **Smart App Launcher**: Prioritizes Brave/Chrome shortcuts and handles Windows aliases (like Calculator) without error popups.
-- **Hardware Heat Monitor**: Real-time GPU (RTX 3050) and CPU temperature telemetry.
-- **Universal Media Controls**: Remote Play/Pause, Skip, and Volume control for Spotify, YouTube, and more.
-- **Safety Handshake (v2.5.1)**: Inline chat approval cards for sensitive file operations (Delete/Create).
-- **Smart Navigator**: Virtual key-press support (`press_key`) and auto-submitting `type_text`.
-- **JSON Repair Layer**: Enhanced model reliability for small 1.5B parameters.
+## ✨ What It Can Do
 
-## 🚀 Core Features
-- **Zero-Touch Execution**: Deterministic tool-calling with 1.5B parameters.
-- **Safety Handshake**: Built-in approval loop with "Inline Cards" for sensitive actions.
-- **Cloud Persistence**: Mobile-triggered file creation and "Smart Append" notes.
+| Category | Capabilities |
+|---|---|
+| 🖥️ App Control | Launch any app, close processes by name |
+| 📸 Screen | Take and save screenshots |
+| 🎵 Media | Play/Pause, Next/Prev track, Volume up/down — works with Spotify, YouTube, etc. |
+| 📊 System Stats | CPU, RAM, Disk usage + GPU & CPU temperatures (NVIDIA) |
+| ⌨️ Input | Type text into any window, press individual keys |
+| 📁 File System | Create files/folders on Desktop, delete files *(requires your approval)* |
+| 🔒 Safety | Sensitive actions (delete, create) require a one-tap approval on your phone |
 
-## 🛡️ Security & Privacy
-Spider-Arm v2.5 is designed for personal privacy:
-- **Google Authentication**: The mobile dashboard is locked. Only the owner can send commands.
-- **Firestore Lockdown**: Security Rules ensure that only your verified email can write to the database.
-- **Local Inference**: Your AI brain runs 100% locally on your GPU. No private screen captures are sent to external APIs.
+---
 
-## 🌟 Detailed Features
-- **🕷️ Hardware Pulse**: Real-time telemetry for **NVIDIA GPU** & **CPU** temperatures.
-- **🎯 Smart App Launcher**: Prioritizes Brave shortcuts and handles Windows command aliases.
-- **🎵 Universal Media Control**: Remote Play/Pause, Skip, and Volume for Spotify/YouTube.
-- **🤖 JSON Repair Layer**: Auto-corrects minor model formatting errors for 100% reliability.
+## 🏗️ How It Works
 
-## 🏗️ Architecture
-
-```mermaid
-graph LR
-    A[Mobile Dashboard] -- writes command --> B((Firebase Firestore))
-    B -- triggers snapshot --> C[Local Python Bridge]
-    C -- inference --> D[Qwen 1.5B Model]
-    D -- tool call --> E[controller/tools.py]
-    E -- executes --> F[Windows PC]
-    F -- returns result --> C
-    C -- updates --> B
-    B -- syncs --> A
 ```
+Your Phone (Dashboard)
+        │
+        │  writes command to cloud
+        ▼
+  Firebase Firestore  ◄──────────────────────────────┐
+        │                                             │
+        │  triggers snapshot listener                 │  updates result
+        ▼                                             │
+  Local Python Bridge (firebase_bridge.py)            │
+        │                                             │
+        │  runs local inference                       │
+        ▼                                             │
+  Qwen 1.5B LoRA Model  ──► controller/tools.py ──► Windows PC
+```
+
+1. You type a command on your phone.
+2. It's written to Firebase Firestore (cloud database).
+3. The bridge script running on your PC picks it up instantly.
+4. The local AI model decides which tool to run.
+5. The tool executes on your PC and the result is sent back to your phone.
+
+---
 
 ## 🛠️ Tech Stack
-- **Model**: [unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit](https://github.com/unslothai/unsloth)
-- **Inference**: Accelerating via Unsloth (4-bit LoRA)
-- **Backend**: Python 3.12 (venv_312)
-- **Database**: Google Firebase Firestore
-- **UI**: Vanilla HTML/JS with Glassmorphism CSS
+
+| Layer | Technology |
+|---|---|
+| AI Model | Qwen2.5-1.5B-Instruct (4-bit LoRA via Unsloth) |
+| Fine-Tuning | TRL + HuggingFace Transformers |
+| Backend | Python 3.12 |
+| Cloud Sync | Google Firebase Firestore |
+| Mobile UI | Vanilla HTML/JS (Glassmorphism theme) |
+| Hosting | Firebase Hosting |
 
 ---
 
-## ⚡ Quick-Start: Zero-Touch Setup (v2.5) 🚀
+## ⚙️ Prerequisites
 
-The **Spider-Setup v2.5** handles the heavy lifting, but you'll need the core engine ready first.
+Before cloning, install these on your PC:
 
-### 📋 Phase 1: Prerequisites (The Essentials)
-Open your **terminal** and run these "One-Click" commands:
+| Tool | Why You Need It | Install Command |
+|---|---|---|
+| **Python 3.12** | Runs all scripts | `winget install -e --id Python.Python.3.12 --version 3.12.10` |
+| **Node.js + npm** | Required by Firebase CLI | [nodejs.org/en/download](https://nodejs.org/en/download) |
+| **Firebase CLI** | Manages cloud setup | `npm install -g firebase-tools` |
+| **NVIDIA GPU** | Runs the AI model locally (4GB+ VRAM) | — |
 
-**1. Install Python 3.12.10** (Exact Version):
-```powershell
-winget install -e --id Python.Python.3.12 --version 3.12.10
-```
-*(⚠️ Important: During manual install, you **MUST** check the **'Add to PATH'** box!)*
-
-**2. Install Firebase CLI**:
-```powershell
-npm install -g firebase-tools
-```
+> ⚠️ During Python install: check **"Add Python to PATH"** or commands won't work.
 
 ---
 
-### 🛠️ Phase 2: Local Environment
+## 🚀 Installation (One-Time Setup)
+
+### Step 1 — Clone the repo
+
 ```powershell
-# 1. Grab the code
 git clone https://github.com/Mayan-kr/Spider-Arm-Assistant.git
 cd Spider-Arm-Assistant
+```
 
-# 2. Create your isolated environment
+### Step 2 — Create a virtual environment & install packages
+
+```powershell
 python -m venv venv_312
 .\venv_312\Scripts\activate
 pip install -r requirements.txt
 ```
 
----
+> 📦 This installs PyTorch, Unsloth, Firebase Admin, and all other dependencies.
 
-### 🕷️ Phase 3: The "Architect" Wizard
-Run the wizard to build your entire Cloud Infrastructure automatically and compile the AI Brain:
+### Step 3 — Run the Setup Wizard
+
 ```powershell
 python setup_wizard.py
 ```
 
-**⚠️ Watch your browser for these 3 "Security Clicks":**
-1. **Firebase Login**: Log in to your Google Account when the browser pops up.
-2. **Enable Auth**: The wizard will open the **Firebase Console**. Click **"Enable Google Sign-In"** and Save. (Required for dashboard security).
-3. **Generate Private Key**: The wizard will open the **Service Accounts** page. Click **"Generate New Private Key"**, then open the downloaded JSON and paste its content into the terminal.
+The wizard will automatically:
+- ✅ Check that Firebase CLI is installed
+- ✅ Log you in to Firebase
+- ✅ Create a Firebase project in the cloud
+- ✅ Register the mobile dashboard web app
+- ✅ Walk you through enabling Google Sign-In (3 browser clicks)
+- ✅ Save your credentials to `credentials.json`
+- ✅ Deploy the mobile dashboard
+- ✅ Fine-tune the AI model on your GPU
 
----
+**During the wizard, your browser will open 3 times:**
 
-### 📱 Phase 4: Remote Operation
-Once the wizard prints your **Unique URL**, you are ready:
-1. **Start the Pulse**: Run `python -m backend.firebase_bridge` on your PC.
-2. **Go Mobile**: Open your project URL on your phone and enjoy!
+| When | What to do |
+|---|---|
+| **Firebase Login** | Sign in with your Google account |
+| **Auth Providers page** | Click **"Get Started"** → **"Google"** → Enable → **Save** |
+| **Service Accounts page** | Click **"Generate New Private Key"** → open the downloaded `.json` → paste its full contents into the terminal |
 
----
+### Step 4 — Start the Bridge
 
-## 🎮 Assistant Modes
-
-### 🏠 Local Terminal Mode
-For direct PC control without the cloud:
-```powershell
-python inference.py
-```
-
-### 📱 Remote Bridge Mode (Hybrid)
-Connects your PC to the world. Ensure this is running to receive mobile commands:
 ```powershell
 python -m backend.firebase_bridge
 ```
 
-## 🛡️ Tools & Safety
-The agent has 11 specialized tools at its disposal:
-- `screenshot()`: Captures the primary display.
-- `launch_app(name)`: Opens any installed application.
-- `get_system_info(metric)`: Fetches CPU, RAM, or Disk stats.
-- `control_media(action)`: Remote music and volume control.
-- `type_text(text)`: Simulates keyboard input (now with auto-Enter).
-- `press_key(key)`: Single key-presses (Enter, Tab, Esc).
-- `create_file(name, content, append)`: Creates/Appends files on Desktop **[REQUIRES APPROVAL]**.
-- `create_folder(name)`: Creates Windows folders **[REQUIRES APPROVAL]**.
-- `delete_file(path)`: Secure file removal **[REQUIRES APPROVAL]**.
-- `terminate_process(name)`: Force closes applications.
-- `confirm_action(id)`: Validates a pending safety request.
+Keep this running. It listens for commands from your phone in real time.
+
+### Step 5 — Open the Dashboard on Your Phone
+
+The wizard printed a URL at the end that looks like:
+```
+https://spider-arm-XXXX.web.app
+```
+Open that on your phone, sign in with the same Google account, and start giving commands.
+
+---
+
+## 🎮 Daily Usage
+
+### Local Mode (terminal only, no phone needed)
+```powershell
+.\venv_312\Scripts\activate
+python inference.py
+```
+
+### Remote Mode (phone → PC)
+```powershell
+.\venv_312\Scripts\activate
+python -m backend.firebase_bridge
+```
+
+---
+
+## 🔒 Security & Privacy
+
+- **Local AI** — your model runs 100% on your own GPU. No text or screenshots are sent to any external AI API.
+- **Google Auth** — the mobile dashboard requires sign-in. Only your Google account can send commands.
+- **Firestore Rules** — the database is locked to your verified email. No one else can write to it.
+- **Approval Flow** — destructive actions (file delete, file create) show an approval card on your phone before executing.
+
+---
+
+## 🔧 Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `firebase: command not found` | Firebase CLI not installed | `npm install -g firebase-tools` |
+| `ModuleNotFoundError` | Packages not installed in venv | Activate venv, then `pip install -r requirements.txt` |
+| `credentials.json not found` | Setup wizard not completed | Re-run `python setup_wizard.py` |
+| `CUDA out of memory` | GPU is busy | Close games or other GPU-heavy apps, then restart |
+| Temperature shows `---` | Missing WMI/GPUtil permissions | Relaunch terminal as **Administrator** |
+| Commands not received on PC | Bridge not running | Make sure `firebase_bridge.py` is running |
+| Model generates wrong tool | Training data issue | Add better examples to `data/pc_control_dataset.jsonl` and re-run `python train.py` |
+
+---
 
 ## 📜 License
-MIT License. Explore and build!
+
+MIT — free to use, modify, and share.

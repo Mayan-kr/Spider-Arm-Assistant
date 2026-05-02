@@ -209,13 +209,130 @@ def press_key(key):
     pyautogui.press(key)
     return {"status": "success", "message": f"Pressed key: {key}"}
 
+def submit_text(text):
+    """Types text and immediately presses Enter — for search boxes, chat inputs, etc."""
+    import time
+    pyautogui.write(text, interval=0.1)
+    time.sleep(0.1)  # Brief pause so the keystroke registers before Enter
+    pyautogui.press("enter")
+    return {"status": "success", "message": f"Typed and submitted: {text}"}
+
+# Hotkey combos that are destructive and require explicit approval before executing
+_DESTRUCTIVE_HOTKEYS = {
+    frozenset(["alt", "f4"]),           # Close active window
+    frozenset(["ctrl", "w"]),            # Close active tab/window
+    frozenset(["ctrl", "alt", "del"]),   # System interrupt
+    frozenset(["ctrl", "shift", "esc"]), # Task Manager (can kill processes)
+    frozenset(["win", "l"]),             # Lock screen (handled by lock_screen tool, avoid double-trigger)
+    frozenset(["alt", "f4"]),            # Close window
+    frozenset(["ctrl", "alt", "delete"]),
+}
+
+def hotkey(keys):
+    """Press a keyboard shortcut. keys: '+'-separated, e.g. 'ctrl+c', 'alt+tab', 'win+d'.
+    Destructive combos (alt+f4, ctrl+w, ctrl+alt+del, win+l) require phone approval first.
+    """
+    try:
+        normalized = keys.lower().strip().replace(' ', '+')
+        key_list = [k.strip() for k in normalized.split('+') if k.strip()]
+        # Common word aliases to pyautogui key names
+        key_map = {
+            'control': 'ctrl',
+            'windows': 'win',
+            'escape': 'esc',
+            'delete': 'del',
+            'return': 'enter',
+        }
+        key_list = [key_map.get(k, k) for k in key_list]
+
+        # Block destructive hotkey combos — route through approval flow
+        key_set = frozenset(key_list)
+        if key_set in _DESTRUCTIVE_HOTKEYS:
+            return _hotkey_confirmed(keys, key_list)
+
+        pyautogui.hotkey(*key_list)
+        return {"status": "success", "message": f"Hotkey: {'+'.join(key_list)}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Hotkey failed: {str(e)}"}
+
+@requires_confirmation
+def _hotkey_confirmed(original_keys, key_list):
+    """Executes a destructive hotkey after explicit user approval."""
+    pyautogui.hotkey(*key_list)
+    return {"status": "success", "message": f"Destructive hotkey executed: {original_keys}"}
+
+def open_url(url):
+    """Open a URL in the default browser. Adds https:// automatically if missing."""
+    import webbrowser
+    url = url.strip()
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    webbrowser.open(url)
+    return {"status": "success", "message": f"Opened: {url}"}
+
+def set_volume(level):
+    """Set system master volume to an exact percentage (0-100)."""
+    try:
+        level = max(0, min(100, int(level)))
+        try:
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            from ctypes import cast, POINTER
+            from comtypes import CLSCTX_ALL
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = cast(interface, POINTER(IAudioEndpointVolume))
+            volume.SetMasterVolumeLevelScalar(level / 100.0, None)
+            return {"status": "success", "message": f"Volume set to {level}%"}
+        except ImportError:
+            return {"status": "error", "message": "pycaw not installed. Run: pip install pycaw"}
+    except Exception as e:
+        return {"status": "error", "message": f"Volume control failed: {str(e)}"}
+
+def lock_screen():
+    """Locks the Windows workstation immediately."""
+    try:
+        import ctypes
+        ctypes.windll.user32.LockWorkStation()
+        return {"status": "success", "message": "Screen locked"}
+    except Exception as e:
+        return {"status": "error", "message": f"Lock failed: {str(e)}"}
+
+@requires_confirmation
+def sleep_pc():
+    """Puts the PC to sleep. WARNING: This will terminate the bridge connection."""
+    subprocess.run("rundll32.exe powrprof.dll,SetSuspendState 0,1,0", shell=True)
+    return {"status": "success", "message": "PC going to sleep"}
+
+def get_battery():
+    """Returns battery percentage and charging status."""
+    try:
+        battery = psutil.sensors_battery()
+        if battery is None:
+            return {"status": "error", "message": "No battery detected (desktop PC)"}
+        status = "Charging" if battery.power_plugged else "Discharging"
+        secs = battery.secsleft
+        if secs in (psutil.POWER_TIME_UNLIMITED, psutil.POWER_TIME_UNKNOWN) or secs < 0:
+            time_left = "N/A"
+        else:
+            time_left = f"{secs // 3600}h {(secs % 3600) // 60}m"
+        return {"status": "success", "data": {
+            "percent": f"{battery.percent:.0f}%",
+            "status": status,
+            "time_left": time_left
+        }}
+    except Exception as e:
+        return {"status": "error", "message": f"Battery check failed: {str(e)}"}
+
+@requires_confirmation
 def terminate_process(name):
+    """Force-closes all processes matching name. Requires approval since unsaved work may be lost."""
     count = 0
     for proc in psutil.process_iter(['name']):
         if name.lower() in proc.info['name'].lower():
             proc.terminate()
             count += 1
     return {"status": "success", "message": f"Terminated {count} process(es) matching {name}"}
+
 
 @requires_confirmation
 def delete_file(path):

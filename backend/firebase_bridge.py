@@ -8,7 +8,8 @@ from controller.tools import (
     screenshot, launch_app, get_system_info, 
     type_text, terminate_process, delete_file, 
     confirm_action, control_media, create_file, create_folder,
-    press_key
+    press_key, submit_text, hotkey, open_url, set_volume,
+    lock_screen, sleep_pc, get_battery
 )
 
 # NOTE: The user will need to provide their own serviceAccountKey.json
@@ -85,13 +86,20 @@ def process_command(command_data):
         "launch_app": lambda p: launch_app(p.get("name")),
         "get_system_info": lambda p: get_system_info(p.get("metric", "all")),
         "type_text": lambda p: type_text(p.get("text")),
+        "submit_text": lambda p: submit_text(p.get("text")),
         "terminate_process": lambda p: terminate_process(p.get("name")),
         "delete_file": lambda p: delete_file(p.get("path")),
         "confirm_action": lambda p: confirm_action(p.get("action_id")),
         "control_media": lambda p: control_media(p.get("action"), p.get("app_hint")),
         "create_file": lambda p: create_file(p.get("name"), p.get("content", ""), p.get("append", False)),
         "create_folder": lambda p: create_folder(p.get("name")),
-        "press_key": lambda p: press_key(p.get("key"))
+        "press_key": lambda p: press_key(p.get("key")),
+        "hotkey": lambda p: hotkey(p.get("keys", "")),
+        "open_url": lambda p: open_url(p.get("url", "")),
+        "set_volume": lambda p: set_volume(p.get("level", 50)),
+        "lock_screen": lambda p: lock_screen(),
+        "sleep_pc": lambda p: sleep_pc(),
+        "get_battery": lambda p: get_battery(),
     }
     
     if tool_name in tools_map:
