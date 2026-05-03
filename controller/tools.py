@@ -1,13 +1,18 @@
 import os
+import sys
 import pyautogui
 import psutil
 import platform
 import subprocess
 import glob
 import shutil
+import time
+import ctypes
+import webbrowser
 from functools import wraps
 
-# Common Windows App Aliases
+
+# Common Windows App Aliases — also used as website shortcuts
 APP_ALIASES = {
     "calculator": "calc",
     "calc": "calc",
@@ -21,6 +26,26 @@ APP_ALIASES = {
     "command prompt": "cmd",
     "task manager": "taskmgr"
 }
+
+# Website shortcuts: bare word -> full URL (used by launch_app URL detection)
+SITE_SHORTCUTS = {
+    "linkedin": "linkedin.com",
+    "youtube": "youtube.com",
+    "github": "github.com",
+    "google": "google.com",
+    "twitter": "twitter.com",
+    "x": "x.com",
+    "instagram": "instagram.com",
+    "reddit": "reddit.com",
+    "facebook": "facebook.com",
+    "netflix": "netflix.com",
+    "gmail": "mail.google.com",
+    "whatsapp": "web.whatsapp.com",
+}
+
+# Common domain TLDs — if name ends with one, treat as URL
+_URL_TLDS = ('.com', '.net', '.org', '.io', '.co', '.to', '.app', '.dev',
+             '.ai', '.in', '.uk', '.us', '.tv', '.me', '.gg')
 
 # Optional hardware/window libraries
 try:
@@ -38,6 +63,15 @@ except ImportError:
 
 # State for the confirmation logic
 pending_actions = {}
+
+def _get_common_dirs():
+    """Returns a list of common user directories for file searching."""
+    user_profile = os.environ.get("USERPROFILE", "")
+    return [
+        os.path.join(user_profile, "Desktop"),
+        os.path.join(user_profile, "Documents"),
+        os.path.join(user_profile, "Downloads"),
+    ]
 
 def requires_confirmation(func):
     @wraps(func)
@@ -73,27 +107,55 @@ def screenshot():
 def launch_app(name):
     try:
         if platform.system() == "Windows":
-            # 1. Alias Resolution
-            target = APP_ALIASES.get(name.lower(), name)
+            name_lower = name.lower().strip()
 
-            # 2. Search for Shortcuts (Brave Apps, Desktop, etc) - PRIORITY
+            # 0. Website shortcut lookup (bare words like 'linkedin', 'youtube')
+            if name_lower in SITE_SHORTCUTS:
+                url = 'https://' + SITE_SHORTCUTS[name_lower]
+                webbrowser.open(url)
+                return {"status": "success", "message": f"Opened: {url}"}
+
+            # 1. Domain name detection — anything ending with a known TLD is a URL
+            if name_lower.endswith(_URL_TLDS) or name_lower.startswith(('http://', 'https://')):
+                url = name if name_lower.startswith(('http://', 'https://')) else 'https://' + name
+                webbrowser.open(url)
+                return {"status": "success", "message": f"Opened: {url}"}
+
+            # 2. File detection: if name has a known file extension, open it directly
+            file_exts = ('.txt', '.pdf', '.docx', '.xlsx', '.pptx', '.csv',
+                         '.jpg', '.jpeg', '.png', '.mp4', '.mp3', '.html',
+                         '.json', '.py', '.md', '.log')
+            if name_lower.endswith(file_exts):
+                search_dirs = _get_common_dirs()
+                for d in search_dirs:
+                    candidate = os.path.join(d, name)
+                    if os.path.exists(candidate):
+                        os.startfile(candidate)
+                        return {"status": "success", "message": f"Opened file: {candidate}"}
+                if os.path.exists(name):
+                    os.startfile(name)
+                    return {"status": "success", "message": f"Opened file: {name}"}
+                return {"status": "error", "message": f"File '{name}' not found on Desktop, Documents, or Downloads."}
+
+            # 3. App alias resolution
+            target = APP_ALIASES.get(name_lower, name)
+
+            # 4. Search for Shortcuts (.lnk files)
             search_paths = [
                 os.path.join(os.environ["APPDATA"], "Microsoft\\Windows\\Start Menu\\Programs\\Brave Apps"),
                 os.path.join(os.environ["APPDATA"], "Microsoft\\Windows\\Start Menu\\Programs\\Chrome Apps"),
                 os.path.join(os.environ["USERPROFILE"], "Desktop"),
                 os.path.join(os.environ["USERPROFILE"], "AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs")
             ]
-            
             for path in search_paths:
                 if os.path.exists(path):
-                    # Try exact match or starting with
                     pattern = os.path.join(path, f"*{target}*.lnk")
                     matches = glob.glob(pattern)
                     if matches:
                         os.startfile(matches[0])
                         return {"status": "success", "message": f"Launched shortcut: {os.path.basename(matches[0])}"}
 
-            # 3. Check if it's a known system command (avoiding the shell popup)
+            # 5. System commands (calc, notepad, etc.)
             if shutil.which(target) or target.startswith("ms-settings:"):
                 subprocess.Popen(["start", target], shell=True)
                 return {"status": "success", "message": f"Launched system app: {target}"}
@@ -103,7 +165,7 @@ def launch_app(name):
         # Fallback for non-Windows
         subprocess.Popen([name])
         return {"status": "success", "message": f"Launched {name}"}
-        
+
     except Exception as e:
         return {"status": "error", "message": f"Error: {str(e)}"}
 
@@ -111,22 +173,31 @@ def get_system_info(metric="all"):
     try:
         info = {}
         if metric in ["cpu", "all"]:
-            info["cpu_usage"] = f"{psutil.cpu_percent()}%"
+            info["cpu_usage"] = f"{psutil.cpu_percent(interval=0.5)}%"
         if metric in ["mem", "all"]:
             info["memory_usage"] = f"{psutil.virtual_memory().percent}%"
         if metric in ["disk", "all"]:
             info["disk_usage"] = f"{psutil.disk_usage('/').percent}%"
-        
-        # Safe Temp/Heat checks (highly prone to hardware/permission errors)
-        if metric in ["temp", "heat", "all"]:
-            # GPU (NVIDIA)
+
+        # Battery (always included in 'all' — shows N/A on desktops)
+        if metric in ["battery", "all"]:
+            bat = psutil.sensors_battery()
+            if bat:
+                info["battery"] = f"{bat.percent:.0f}% ({'Charging' if bat.power_plugged else 'Discharging'})"
+            else:
+                info["battery"] = "N/A (desktop)"
+
+        # Safe Temp/Heat/GPU checks
+        if metric in ["temp", "heat", "gpu", "all"]:
+            # GPU temperature + usage (NVIDIA via GPUtil)
             if GPUtil:
                 try:
                     gpus = GPUtil.getGPUs()
                     if gpus:
                         info["gpu_temp"] = f"{gpus[0].temperature}°C"
+                        info["gpu_usage"] = f"{gpus[0].load * 100:.1f}%"
                 except: pass
-            # CPU
+            # CPU temperature via WMI
             if wmi:
                 try:
                     w = wmi.WMI(namespace="root\\wmi")
@@ -142,7 +213,6 @@ def get_system_info(metric="all"):
 
 def control_media(action, app_hint=None):
     try:
-        import time
         # 1. Provide Focus (Crucial for suspended/minimized apps)
         focus_msg = ""
         if gw and app_hint:
@@ -211,7 +281,6 @@ def press_key(key):
 
 def submit_text(text):
     """Types text and immediately presses Enter — for search boxes, chat inputs, etc."""
-    import time
     pyautogui.write(text, interval=0.1)
     time.sleep(0.1)  # Brief pause so the keystroke registers before Enter
     pyautogui.press("enter")
@@ -263,7 +332,6 @@ def _hotkey_confirmed(original_keys, key_list):
 
 def open_url(url):
     """Open a URL in the default browser. Adds https:// automatically if missing."""
-    import webbrowser
     url = url.strip()
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
@@ -271,27 +339,37 @@ def open_url(url):
     return {"status": "success", "message": f"Opened: {url}"}
 
 def set_volume(level):
-    """Set system master volume to an exact percentage (0-100)."""
+    """Set system master volume to an exact percentage (0-100).
+    Runs pycaw in a subprocess so a COM crash cannot kill the bridge.
+    """
     try:
         level = max(0, min(100, int(level)))
-        try:
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-            from ctypes import cast, POINTER
-            from comtypes import CLSCTX_ALL
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume = cast(interface, POINTER(IAudioEndpointVolume))
-            volume.SetMasterVolumeLevelScalar(level / 100.0, None)
+        # Run the COM call in a child process — COM access violations are C-level
+        # crashes that bypass Python's try/except and would kill the bridge otherwise.
+        script = (
+            "from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume;"
+            "from ctypes import cast, POINTER;"
+            "from comtypes import CLSCTX_ALL;"
+            f"s=AudioUtilities.GetSpeakers();"
+            f"d=getattr(s,'_dev',s);"
+            f"i=d.Activate(IAudioEndpointVolume._iid_,CLSCTX_ALL,None);"
+            f"v=cast(i,POINTER(IAudioEndpointVolume));"
+            f"v.SetMasterVolumeLevelScalar({level/100.0:.4f},None)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, timeout=6
+        )
+        if result.returncode == 0:
             return {"status": "success", "message": f"Volume set to {level}%"}
-        except ImportError:
-            return {"status": "error", "message": "pycaw not installed. Run: pip install pycaw"}
-    except Exception as e:
+        err = result.stderr.decode("utf-8", errors="ignore").strip()
+        return {"status": "error", "message": f"Volume control failed: {err[:200]}"}
+    except BaseException as e:
         return {"status": "error", "message": f"Volume control failed: {str(e)}"}
 
 def lock_screen():
     """Locks the Windows workstation immediately."""
     try:
-        import ctypes
         ctypes.windll.user32.LockWorkStation()
         return {"status": "success", "message": "Screen locked"}
     except Exception as e:
@@ -327,24 +405,69 @@ def get_battery():
 def terminate_process(name):
     """Force-closes all processes matching name. Requires approval since unsaved work may be lost."""
     count = 0
+    errors = 0
     for proc in psutil.process_iter(['name']):
-        if name.lower() in proc.info['name'].lower():
-            proc.terminate()
-            count += 1
-    return {"status": "success", "message": f"Terminated {count} process(es) matching {name}"}
+        try:
+            if name.lower() in proc.info['name'].lower():
+                proc.terminate()
+                count += 1
+        except (psutil.AccessDenied, Exception):
+            errors += 1
+    
+    msg = f"Terminated {count} process(es) matching {name}"
+    if errors > 0:
+        msg += f" ({errors} access denied)"
+    return {"status": "success", "message": msg}
 
 
 @requires_confirmation
 def delete_file(path):
-    if os.path.exists(path):
+    """Delete a file or folder. Searches Desktop/Documents/Downloads if only filename given."""
+    # If it's already a valid absolute path, delete directly
+    if os.path.isfile(path):
         os.remove(path)
-        return {"status": "success", "message": f"Deleted {path}"}
-    else:
-        return {"status": "error", "message": "File not found"}
+        return {"status": "success", "message": f"Deleted file: {path}"}
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+        return {"status": "success", "message": f"Deleted folder: {path}"}
+
+    # Search common locations by filename/foldername (exact, then fuzzy prefix)
+    search_dirs = _get_common_dirs()
+    name = os.path.basename(path)
+
+    # Pass 1: exact name match
+    for d in search_dirs:
+        candidate = os.path.join(d, name)
+        if os.path.isfile(candidate):
+            os.remove(candidate)
+            return {"status": "success", "message": f"Deleted file: {candidate}"}
+        if os.path.isdir(candidate):
+            shutil.rmtree(candidate)
+            return {"status": "success", "message": f"Deleted folder: {candidate}"}
+
+    # Pass 2: fuzzy prefix glob — handles model truncating long filenames
+    # e.g. model outputs "cat_dog_gif" but actual file is "cat_dog_giraffe.txt"
+    stem = os.path.splitext(name)[0]  # strip extension if present
+    for d in search_dirs:
+        # Try both the full name and the stem (without extension) as prefix
+        for pattern_base in (name, stem):
+            if not pattern_base:
+                continue
+            matches = glob.glob(os.path.join(d, f"{pattern_base}*"))
+            if matches:
+                match = matches[0]
+                if os.path.isfile(match):
+                    os.remove(match)
+                    return {"status": "success", "message": f"Deleted file: {match}"}
+                if os.path.isdir(match):
+                    shutil.rmtree(match)
+                    return {"status": "success", "message": f"Deleted folder: {match}"}
+
+    return {"status": "error", "message": f"Not found: '{path}' (checked Desktop, Documents, Downloads)"}
 
 @requires_confirmation
 def create_file(name, content="", append=False):
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+    desktop = os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
     # If name is just a filename, put it on desktop. Otherwise treat as path.
     path = name if os.path.isabs(name) else os.path.join(desktop, name)
     
@@ -358,7 +481,7 @@ def create_file(name, content="", append=False):
 
 @requires_confirmation
 def create_folder(name):
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+    desktop = os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
     path = name if os.path.isabs(name) else os.path.join(desktop, name)
     
     os.makedirs(path, exist_ok=True)

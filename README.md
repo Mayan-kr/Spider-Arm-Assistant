@@ -1,6 +1,6 @@
 # 🕷️ Spider-Arm Assistant v2.5
 
-> **Control your Windows PC from your phone using voice-friendly natural language — powered by a local AI model, no cloud inference fees.**
+> **Control your Windows PC from your phone using friendly natural language — powered by a local AI model, no cloud inference fees.**
 
 Spider-Arm is a personal AI assistant that runs a fine-tuned **Qwen2.5-1.5B** model locally on your GPU. You send it a plain-English command (e.g. *"take a screenshot"*, *"play the next song"*, *"check my CPU temp"*) from a mobile web dashboard, and it figures out which tool to execute on your PC.
 

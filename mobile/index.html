@@ -472,6 +472,7 @@
             
             addMessage(cmd, 'user');
             input.value = '';
+            input.blur(); // Remove focus to prevent agent from typing into its own dashboard
             
             try {
                 // Send to Firestore

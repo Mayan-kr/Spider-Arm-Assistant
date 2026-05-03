@@ -120,6 +120,16 @@ def generate_dataset():
             "action": '{"tool": "create_file", "parameters": {"name": "notes.txt", "content": "Remember to buy milk", "append": true}}'
         },
         {
+            "instruction": "Add Hey it works in CRY.txt.",
+            "thought": "The user wants to append text. 'in' means append to the file.",
+            "action": '{"tool": "create_file", "parameters": {"name": "CRY.txt", "content": "Hey it works", "append": true}}'
+        },
+        {
+            "instruction": "Write Done for today in work.txt.",
+            "thought": "User wants to create/overwrite a file with content.",
+            "action": '{"tool": "create_file", "parameters": {"name": "work.txt", "content": "Done for today", "append": false}}'
+        },
+        {
             "instruction": "Write Done for today to work.txt.",
             "thought": "User wants to create/overwrite a file with content.",
             "action": '{"tool": "create_file", "parameters": {"name": "work.txt", "content": "Done for today", "append": false}}'

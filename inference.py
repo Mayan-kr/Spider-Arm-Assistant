@@ -29,28 +29,46 @@ def load_agent_model(model_path="qwen_assistant_lora"):
     FastLanguageModel.for_inference(model)
     return model, tokenizer
 
+import ast
+
 def repair_json_string(s):
     """Aggressive fixes for small model (1.5B) JSON hallucinations"""
-    # 1. Standardize quotes
-    s = s.replace("'", '"')
-    
-    # 2. Fix missing colons or quotes around keys (common 1.5B fail)
-    # Fix {"tool" "name"} or {tool: "name"}
+    # 1. Try parsing it as a Python dictionary first (handles single quotes and Python booleans)
+    try:
+        start = s.find('{')
+        end = s.rfind('}')
+        if start != -1 and end != -1:
+            dict_str = s[start:end+1]
+            parsed = ast.literal_eval(dict_str)
+            if isinstance(parsed, dict):
+                return json.dumps(parsed)
+    except (SyntaxError, ValueError):
+        pass
+
+    # 2. Fallback: manual regex fixes if ast.literal_eval fails
+    # Fix missing colons or quotes around keys
     s = re.sub(r'(\{|,)\s*"?(\w+)"?\s*(\s|:)\s*', r'\1"\2": ', s)
-    
+
     # 3. Fix missing "parameters" key: {"tool": "name", {}} -> {"tool": "name", "parameters": {}}
     s = re.sub(r'("\w+"),?\s*\{', r'\1, "parameters": {', s)
-    
+
     # 4. Ensure balanced braces
     if s.count('{') > s.count('}'):
         s += '}' * (s.count('{') - s.count('}'))
-    
+
     # 5. Greedy clip: get the last valid JSON block
     last_brace = s.rfind('}')
     if last_brace != -1:
         s = s[:last_brace+1]
-        
+
+    # Convert remaining single quotes ONLY outside of words, to avoid breaking "It's"
+    s = re.sub(r"(?<![a-zA-Z])'(?![a-zA-Z])", '"', s)
+    s = re.sub(r'\bTrue\b', 'true', s)
+    s = re.sub(r'\bFalse\b', 'false', s)
+    s = re.sub(r'\bNone\b', 'null', s)
+
     return s
+
 
 # Neural Blueprint: Spider-Arm v2.5 Capabilities
 SYSTEM_PROMPT = """You are Spider-Arm v2.5, a professional PC assistant. 
@@ -82,7 +100,13 @@ CRITICAL RULES:
 - 'type X and press enter' / 'search for X' -> submit_text(X). One call, not two.
 - 'type X' alone -> type_text(X).
 - 'copy' / 'paste' / 'undo' / 'select all' / 'switch window' -> hotkey with the correct shortcut.
-- 'open X.com' / 'go to URL' -> open_url, NOT launch_app.
+- 'open X.com' / 'open SITENAME' / 'go to URL' -> open_url, NOT launch_app.
+- 'increase/raise/boost the volume' -> control_media(volume_up). NEVER use set_volume for relative changes.
+- 'decrease/reduce/lower the volume' -> control_media(volume_down). NEVER use set_volume for relative changes.
+- 'set volume to N%' / 'volume at N' -> set_volume(N). Only use set_volume when given an exact number.
+- 'add X in Y' / 'add X to Y' -> ALWAYS use create_file with append=true.
+- 'write X in Y' / 'create X' -> use create_file with append=false.
+- 'delete FILE' / 'remove FILE' -> delete_file. NEVER use terminate_process for file/folder deletion.
 
 EXAMPLES:
 - "Type turtle" -> ### Thought: Type only, no submit. ### Action: {"tool": "type_text", "parameters": {"text": "turtle"}}
@@ -100,11 +124,15 @@ EXAMPLES:
 - "Go to google" -> ### Thought: Open URL. ### Action: {"tool": "open_url", "parameters": {"url": "google.com"}}
 - "Set volume to 40" -> ### Thought: Set exact volume level. ### Action: {"tool": "set_volume", "parameters": {"level": 40}}
 - "Volume at 70 percent" -> ### Thought: Set exact volume. ### Action: {"tool": "set_volume", "parameters": {"level": 70}}
+- "Increase the volume" -> ### Thought: Relative volume increase. ### Action: {"tool": "control_media", "parameters": {"action": "volume_up"}}
+- "Reduce the volume" / "Lower the volume" -> ### Thought: Relative volume decrease. ### Action: {"tool": "control_media", "parameters": {"action": "volume_down"}}
 - "Lock my PC" / "lock screen" -> ### Thought: Lock workstation. ### Action: {"tool": "lock_screen", "parameters": {}}
 - "Sleep" / "put PC to sleep" -> ### Thought: Sleep requires approval. ### Action: {"tool": "sleep_pc", "parameters": {}}
 - "Check battery" / "battery level" -> ### Thought: Get battery info. ### Action: {"tool": "get_battery", "parameters": {}}
 - "Create a note called hello.txt saying hi" -> ### Thought: Writing a file. ### Action: {"tool": "create_file", "parameters": {"name": "hello.txt", "content": "hi", "append": false}}
+- "Write Done for today in work.txt" -> ### Thought: Overwriting/writing file. ### Action: {"tool": "create_file", "parameters": {"name": "work.txt", "content": "Done for today", "append": false}}
 - "Add 'Remember to buy milk' to notes.txt" -> ### Thought: Appending to file. ### Action: {"tool": "create_file", "parameters": {"name": "notes.txt", "content": "Remember to buy milk", "append": true}}
+- "Add 'The second line' in CRY.txt" -> ### Thought: Adding text means appending. ### Action: {"tool": "create_file", "parameters": {"name": "CRY.txt", "content": "The second line", "append": true}}
 - "Open spotify" -> ### Thought: Need to open music player. ### Action: {"tool": "launch_app", "parameters": {"name": "spotify"}}
 - "Resume the music" -> ### Thought: Toggle play/pause. ### Action: {"tool": "control_media", "parameters": {"action": "play_pause", "app_hint": "spotify"}}
 - "Next song" -> ### Thought: Skip to next track. ### Action: {"tool": "control_media", "parameters": {"action": "next", "app_hint": "spotify"}}
